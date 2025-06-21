@@ -266,7 +266,10 @@ class ModelHistory(Model):
 
 
 class ModelSymbolicParameters(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
-    def __init__(self):
+    def __init__(self, resolve_parameters=True, override_u_min=True):
+        self.__resolve_parameters = resolve_parameters
+        self.__override_u_min = override_u_min
+
         super().__init__(
             input_folder=data_path(),
             output_folder=data_path(),
@@ -283,6 +286,10 @@ class ModelSymbolicParameters(ModelicaMixin, CollocatedIntegratedOptimizationPro
         parameters["u_max"] = 2.0
         parameters["x_initial"] = 1.1
         parameters["w_seed"] = 0.2
+        parameters["a"] = -2.0
+
+        if self.__override_u_min:
+            parameters["u_min"] = -1.5
         return parameters
 
     def objective(self, ensemble_member):
@@ -294,6 +301,11 @@ class ModelSymbolicParameters(ModelicaMixin, CollocatedIntegratedOptimizationPro
         compiler_options = super().compiler_options()
         compiler_options["cache"] = False
         compiler_options["library_folders"] = []
+
+        if not self.__resolve_parameters:
+            compiler_options["replace_parameter_expressions"] = False
+            compiler_options["resolve_parameter_values"] = False
+
         return compiler_options
 
 
@@ -619,6 +631,45 @@ class TestModelicaMixinSymbolicParameters(TestCase, unittest.TestCase):
         self.assertEqual(history["x"].values[-1], 1.1)
         self.problem.optimize()
         self.assertAlmostEqual(self.problem.extract_results()["x"][0], 1.1, self.tolerance)
+
+
+class TestModelicaMixinSymbolicParametersResolve(TestCase, unittest.TestCase):
+    def test_parameters_resolve_or_not(self):
+        """
+        We set a 'default' value of u_min = a * b in the Pymoca model. If we
+        tell pymoca to replace parameter expressions (default behavior), we can
+        no longer override 'u_min' via the parameters() method. If we tell
+        Pymoca to _not_ inline, we expect to be able to override 'u_min', but
+        for it to also still have the default value of a * b.
+        """
+        problem = ModelSymbolicParameters()
+        problem.optimize()
+        parameters = problem.parameters(0)
+        bounds = problem.bounds()
+
+        # Check that overriding "u_min" has no effect if parameters are resolved
+        self.assertNotEqual(bounds["u"][0], parameters["u_min"])
+
+        # Check that overriding "u_min" has effect if parameters are not resolved
+        problem_no_resolved = ModelSymbolicParameters(resolve_parameters=False)
+        problem_no_resolved.optimize()
+        parameters_no_resolved = problem_no_resolved.parameters(0)
+        bounds_no_resolved = problem_no_resolved.bounds()
+
+        self.assertEqual(bounds_no_resolved["u"][0], parameters_no_resolved["u_min"])
+
+        # Check that if we do not override "u_min", it takes the default value a
+        # * b, and that overriding the value of 'a' works.
+        problem_no_override = ModelSymbolicParameters(
+            resolve_parameters=False, override_u_min=False
+        )
+        problem_no_override.optimize()
+        parameters_no_override = problem_no_override.parameters(0)
+        bounds_no_override = problem_no_override.bounds()
+
+        self.assertEqual(
+            bounds_no_override["u"][0], parameters_no_override["a"] * parameters_no_override["b"]
+        )
 
 
 class ModelAliasBounds(Model):
