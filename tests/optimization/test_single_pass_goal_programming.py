@@ -1,5 +1,6 @@
 import logging
 
+import casadi as ca
 import numpy as np
 
 from rtctools.optimization.collocated_integrated_optimization_problem import (
@@ -45,6 +46,39 @@ class PathGoal2(Goal):
     function_range = (-1e1, 1e1)
     priority = 2
     target_max = Timeseries(np.linspace(0.0, 1.0, 21), 21 * [1.0])
+
+
+class VectorPathGoal(Goal):
+    def function(self, optimization_problem, ensemble_member):
+        return ca.vertcat(optimization_problem.state("x"), optimization_problem.state("x") * 2)
+
+    size = 2
+    function_range = (-1e1, 1e1)
+    priority = 1
+    target_max = np.array([1.0, 2.0])
+    order = 1
+
+
+class VectorGoal(Goal):
+    def function(self, optimization_problem, ensemble_member):
+        x_at_05 = optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+        return ca.vertcat(x_at_05, x_at_05 * 2, x_at_05 * 3)
+
+    size = 3
+    function_range = (-1e1, 1e1)
+    priority = 1
+    target_min = np.array([0.0, 0.0, 0.0])
+    order = 1
+
+
+class ScalarGoal(Goal):
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+
+    function_range = (-1e1, 1e1)
+    priority = 1
+    target_max = 2.0
+    order = 1
 
 
 class GoalMinU(MinAbsStateGoal):
@@ -107,11 +141,20 @@ class ModelPathGoals:
         options["casadi_solver"] = "qpsol"
         return options
 
+    def goals(self):
+        goals = super().goals().copy()
+
+        goals.append(VectorGoal())
+        goals.append(ScalarGoal())
+
+        return goals
+
     def path_goals(self):
         goals = super().path_goals().copy()
 
         goals.append(PathGoal1())
         goals.append(PathGoal2())
+        goals.append(VectorPathGoal())
 
         return goals
 
@@ -228,11 +271,14 @@ class TestSinglePassGoalProgramming(TestCase):
         Every goal's epsilon variable should be present in the initial seed, and
         should be set to one.
         """
+        seed = self.problem_append._initial_seed
         n_goals = len(self.problem_append.path_goals()) + len(self.problem_append.goals())
-        self.assertEqual(len(self.problem_append._initial_seed.keys()), n_goals)
+        self.assertEqual(len(seed.keys()), n_goals)
 
-        for ts in self.problem_append._initial_seed.values():
-            np.testing.assert_equal(ts.values, 1.0)
+        for value in seed.values():
+            np.testing.assert_equal(getattr(value, "values", value), 1.0)
+
+        self.assertEqual(seed["eps_0_0"].shape, (3,))
 
 
 class ModelSinglePassGoalProgrammingCachingQPSol(ModelSinglePassGoalProgrammingAppend):
