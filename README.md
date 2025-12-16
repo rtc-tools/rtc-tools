@@ -70,6 +70,12 @@ Documentation and examples are available at:
 - [Stable documentation](https://rtc-tools.readthedocs.io/en/stable/)
 - [Latest documentation](https://rtc-tools.readthedocs.io/en/latest/)
 
+## Contributing
+
+We welcome contributions to RTC-Tools! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started, coding standards, and our development process.
+
+The project is governed according to our [Technical Charter](CHARTER.md) and [Governance Model](GOVERNANCE.md).
+
 
 ## Migration from GitLab
 
