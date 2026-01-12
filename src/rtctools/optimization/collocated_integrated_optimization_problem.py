@@ -2217,15 +2217,26 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         )
 
                     if isinstance(seed_k, Timeseries):
-                        x0[inds] = (
+                        seed_k = (
                             self.interpolate(
                                 times, seed_k.times, seed_k.values, 0, 0, interpolation_method
                             )
                             .transpose()
                             .ravel()
                         )
-                    else:
-                        x0[inds] = seed_k
+                    elif isinstance(seed_k, np.ndarray):
+                        seed_k = seed_k.ravel()
+
+                    # NumPy 2.x requires explicit scalar extraction for single-index assignment
+                    if isinstance(seed_k, np.ndarray) and isinstance(inds, (int, np.integer)):
+                        if seed_k.size != 1:
+                            raise ValueError(
+                                f"Seed for '{variable}' has {seed_k.size} elements, "
+                                "expected 1 for scalar index"
+                            )
+                        seed_k = seed_k.item()
+
+                    x0[inds] = seed_k
 
                     x0[inds] /= nominal
                 except KeyError:
