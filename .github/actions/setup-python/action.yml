@@ -51,3 +51,13 @@ runs:
 
         echo "Executing: ${CMD_PARTS[*]}"
         "${CMD_PARTS[@]}"
+
+    - name: Set tox resolution environment
+      if: ${{ inputs.resolution-mode != 'frozen' }}
+      shell: bash
+      run: |
+        if [[ "${{ inputs.resolution-mode }}" == "lowest" ]]; then
+          echo "UV_RESOLUTION=lowest-direct" >> $GITHUB_ENV
+        elif [[ "${{ inputs.resolution-mode }}" == "highest" ]]; then
+          echo "UV_RESOLUTION=highest" >> $GITHUB_ENV
+        fi
