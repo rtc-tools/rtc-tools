@@ -53,9 +53,21 @@ def substitute_in_external(
     elif not expr:
         return []
     else:
+        # CasADi < 3.7 workaround: f.call() with MX values returns wrapped
+        # results like f(...){0}. Resolve symbolics with ca.substitute(), and
+        # convert resulting MX constants to floats first. Remove when dropping
+        # support for CasADi 3.6.x.
+        resolved_values = list(values)
         for _ in range(MAX_SUBSTITUTE_DEPTH):
+            for i, v in enumerate(resolved_values):
+                if isinstance(v, ca.MX) and not v.is_constant():
+                    resolved_values[i] = ca.substitute([v], symbols, resolved_values)[0]
+                elif isinstance(v, ca.MX):
+                    resolved_values[i] = float(v)
+
+            # Substitute in expression using f.call() for external function support
             f = ca.Function("f", symbols, expr).expand()
-            expr = f.call(values, True, False)
+            expr = f.call(resolved_values, True, False)
             if expr[0].is_constant():
                 break
 
