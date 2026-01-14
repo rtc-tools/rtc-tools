@@ -42,11 +42,23 @@ def reduce_matvec(e, v):
     return ca.reshape(ca.mtimes(A, v), e.shape)
 
 
-def substitute_in_external(expr, symbols, values):
-    if len(symbols) == 0 or all(isinstance(x, ca.DM) for x in expr):
+def substitute_in_external(
+    expr: list[ca.MX],
+    symbols: list[ca.MX],
+    values: list[ca.MX | ca.DM | float],
+    /,
+    resolve_numerically=False,
+):
+    # We expect expr to be a list of (at most) length 1
+    assert len(expr) <= 1
+
+    if not expr or len(symbols) == 0 or all(isinstance(x, ca.DM) for x in expr):
         return expr
     elif not expr:
         return []
+    elif not resolve_numerically:
+        f = ca.Function("f", symbols, expr)
+        return f.call(values, True, False)
     else:
         # CasADi < 3.7 workaround: f.call() with MX values returns wrapped
         # results like f(...){0}. Resolve symbolics with ca.substitute(), and
