@@ -398,6 +398,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     [parameter_values],
                     self.dae_variables["parameters"],
                     ca.vertsplit(parameter_values),
+                    resolve_numerically=False,
                 )
             else:
                 parameter_values = nullvertcat(*parameter_values)
