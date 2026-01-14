@@ -2,10 +2,10 @@ import itertools
 import logging
 import warnings
 from abc import ABCMeta, abstractmethod
-from typing import Dict, Union
 
 import casadi as ca
 import numpy as np
+from numpy.typing import NDArray
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.casadi_helpers import (
@@ -17,7 +17,7 @@ from rtctools._internal.casadi_helpers import (
 )
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 
-from .optimization_problem import OptimizationProblem
+from .optimization_problem import BT, OptimizationProblem
 from .timeseries import Timeseries
 
 logger = logging.getLogger("rtctools")
@@ -44,10 +44,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
     :cvar check_collocation_linearity:
         If ``True``, check whether collocation constraints are linear. Default is ``True``.
+    :cvar inline_delay_expressions:
+        If ``True``, delay expressions are inlined into constraints and objectives instead of
+        being added as separate equality constraints. Default is ``False``.
     """
 
     #: Check whether the collocation constraints are linear
     check_collocation_linearity = True
+
+    #: Inline delay expressions instead of adding them as separate equality constraints
+    inline_delay_expressions = False
 
     #: Whether or not the collocation constraints are linear (affine)
     linear_collocation = None
@@ -172,7 +178,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         #      algebraic parts. Theta then only applies to the ODE part.
         return 1.0
 
-    def map_options(self) -> Dict[str, Union[str, int]]:
+    def map_options(self) -> dict[str, str | int]:
         """
         Returns a dictionary of CasADi ``map()`` options.
 
@@ -257,10 +263,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         ):
             self.__variable_sizes[variable] = 1
 
-        for mx_symbol, variable in zip(self.path_variables, self.__path_variable_names):
+        for mx_symbol, variable in zip(
+            self.path_variables, self.__path_variable_names, strict=True
+        ):
             self.__variable_sizes[variable] = mx_symbol.size1()
 
-        for mx_symbol, variable in zip(self.extra_variables, self.__extra_variable_names):
+        for mx_symbol, variable in zip(
+            self.extra_variables, self.__extra_variable_names, strict=True
+        ):
             self.__variable_sizes[variable] = mx_symbol.size1()
 
         # Calculate nominals for the initial derivatives. We assume that the
@@ -268,7 +278,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__initial_derivative_nominals = {}
         history_0 = self.history(0)
         for variable, initial_der_name in zip(
-            self.__differentiated_states, self.__initial_derivative_names
+            self.__differentiated_states, self.__initial_derivative_names, strict=True
         ):
             times = self.times(variable)
             default_time_step_size = 0
@@ -312,7 +322,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             for variable in self.__integrated_states:
                 if self.__variable_sizes.get(variable, 1) > 1:
                     raise NotImplementedError(
-                        "Vector symbol not supported for integrated state '{}'".format(variable)
+                        f"Vector symbol not supported for integrated state '{variable}'"
                     )
         else:
             self.__integrated_states = []
@@ -321,7 +331,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         for variable in self.controls:
             if self.__variable_sizes.get(variable, 1) > 1:
                 raise NotImplementedError(
-                    "Vector symbol not supported for control state '{}'".format(variable)
+                    f"Vector symbol not supported for control state '{variable}'"
                 )
 
         # Collocation times
@@ -342,7 +352,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 try:
                     constant_input = raw_constant_inputs[variable]
                 except KeyError:
-                    raise Exception("No values found for constant input {}".format(variable))
+                    raise Exception(f"No values found for constant input {variable}")
                 else:
                     values = constant_input.values
                     interpolation_method = self.interpolation_method(variable)
@@ -371,7 +381,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 try:
                     parameter_values[i] = parameters[variable]
                 except KeyError:
-                    raise Exception("No value specified for parameter {}".format(variable))
+                    raise Exception(f"No value specified for parameter {variable}")
 
             if len(dynamic_parameters) > 0:
                 jac_1 = ca.jacobian(symbolic_parameters, ca.vertcat(*dynamic_parameters))
@@ -385,7 +395,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             ):
                 parameter_values = nullvertcat(*parameter_values)
                 [parameter_values] = substitute_in_external(
-                    [parameter_values], self.dae_variables["parameters"], parameter_values
+                    [parameter_values],
+                    self.dae_variables["parameters"],
+                    ca.vertsplit(parameter_values),
+                    resolve_numerically=False,
                 )
             else:
                 parameter_values = nullvertcat(*parameter_values)
@@ -410,7 +423,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 if v.ndim == 1:
                     ensemble_data["extra_constant_inputs"][k] = v[:, None]
 
-        bounds = self.bounds()
+        if self.ensemble_specific_bounds:
+            bounds = [self.bounds(ensemble_member=i) for i in range(self.ensemble_size)]
+        else:
+            bounds = self.bounds()
 
         # Initialize control discretization
         (
@@ -494,8 +510,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         collocated_variables += self.dae_variables["control_inputs"]
 
         if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug("Integrating variables {}".format(repr(integrated_variables)))
-            logger.debug("Collocating variables {}".format(repr(collocated_variables)))
+            logger.debug(f"Integrating variables {repr(integrated_variables)}")
+            logger.debug(f"Collocating variables {repr(collocated_variables)}")
 
         integrated_variable_names = [v.name() for v in integrated_variables]
         integrated_variable_nominals = np.array(
@@ -517,14 +533,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             collocated_derivatives = self.dae_variables["derivatives"][:]
         self.__algebraic_and_control_derivatives = []
         for var in self.dae_variables["algebraics"]:
-            sym = ca.MX.sym("der({})".format(var.name()))
+            sym = ca.MX.sym(f"der({var.name()})")
             self.__algebraic_and_control_derivatives.append(sym)
             if self.integrate_states:
                 integrated_derivatives.append(sym)
             else:
                 collocated_derivatives.append(sym)
         for var in self.dae_variables["control_inputs"]:
-            sym = ca.MX.sym("der({})".format(var.name()))
+            sym = ca.MX.sym(f"der({var.name()})")
             self.__algebraic_and_control_derivatives.append(sym)
             collocated_derivatives.append(sym)
 
@@ -546,7 +562,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         delayed_feedback = self.delayed_feedback()
         if delayed_feedback:
             delayed_feedback_expressions, delayed_feedback_states, delayed_feedback_durations = zip(
-                *delayed_feedback
+                *delayed_feedback, strict=True
             )
         # Make sure the original data cannot be used anymore, because it will
         # become incorrect/stale with the inlining of constant parameters.
@@ -758,7 +774,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 try:
                     lookup_table = lookup_tables[sym_name]
                 except KeyError:
-                    raise Exception("Unable to find lookup table function for {}".format(sym_name))
+                    raise Exception(f"Unable to find lookup table function for {sym_name}")
                 else:
                     input_syms = [
                         self.variable(input_sym.name()) for input_sym in lookup_table.inputs
@@ -823,9 +839,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             if self.integrate_states:
                 I = ca.MX.sym("I", len(integrated_variables))  # noqa: E741
                 I0 = ca.MX.sym("I0", len(integrated_variables))
-                C0 = [ca.MX.sym("C0[{}]".format(i)) for i in range(len(collocated_variables))]
+                C0 = [ca.MX.sym(f"C0[{i}]") for i in range(len(collocated_variables))]
                 CI0 = [
-                    ca.MX.sym("CI0[{}]".format(i))
+                    ca.MX.sym(f"CI0[{i}]")
                     for i in range(len(self.dae_variables["constant_inputs"]))
                 ]
                 dt_sym = ca.MX.sym("dt")
@@ -1243,6 +1259,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # Integrators are saved for result extraction later on
         self.__integrators = []
 
+        # If inlining delay expressions, prepare for the single call to ca.substitute()
+        # at the end
+        if self.inline_delay_expressions:
+            delayed_feedback_variable_replacement = ca.MX.zeros(X.numel())
+            delayed_feedback_variable_replacement[:] = X
+
         # Process the objectives and constraints for each ensemble member separately.
         # Note that we don't use map here for the moment, so as to allow each ensemble member to
         # define its own constraints and objectives. Path constraints are applied for all ensemble
@@ -1250,9 +1272,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # ensemble member to specify its own path constraints as well, once CasADi has some kind
         # of loop detection.
         for ensemble_member in range(self.ensemble_size):
-            logger.info(
-                "Transcribing ensemble member {}/{}".format(ensemble_member + 1, self.ensemble_size)
-            )
+            logger.info(f"Transcribing ensemble member {ensemble_member + 1}/{self.ensemble_size}")
 
             initial_state = ensemble_aggregate["initial_state"][:, ensemble_member]
             initial_derivatives = ensemble_aggregate["initial_derivatives"][:, ensemble_member]
@@ -1299,9 +1319,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                         if val < lbx[idx] or val > ubx[idx]:
                             logger.warning(
-                                "Initial value {} for variable '{}' outside bounds.".format(
-                                    val, variable
-                                )
+                                f"Initial value {val} for variable '{variable}' outside bounds."
                             )
 
                         lbx[idx] = ubx[idx] = val
@@ -1627,13 +1645,13 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         states_and_algebraics_and_controls,
                         states_and_algebraics_and_controls_derivatives,
                         *[
-                            ca.horzcat(*constant_inputs[variable][1:])
+                            ca.MX(constant_inputs[variable][1:]).T
                             for variable in dae_constant_inputs_names
                         ],
-                        ca.horzcat(*collocation_times[1:]),
+                        ca.MX(collocation_times[1:]).T,
                         path_variables.T if path_variables.numel() > 0 else ca.MX(),
                         *[
-                            ca.horzcat(*extra_constant_inputs[variable][1:])
+                            ca.MX(extra_constant_inputs[variable][1:]).T
                             for (variable, _) in extra_constant_inputs_name_and_size
                         ],
                     ),
@@ -1826,8 +1844,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         np.isnan(delayed_feedback_history[hist_start_ind:, i])
                     ):
                         logger.warning(
-                            "Incomplete history for delayed expression {}. "
-                            "Extrapolating t0 value backwards in time.".format(expression)
+                            f"Incomplete history for delayed expression {expression}. "
+                            "Extrapolating t0 value backwards in time."
                         )
                         out_times = out_times[len(history_times) :]
                         out_values = out_values[len(history_times) :]
@@ -1851,10 +1869,32 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                     nominal = nominal_delayed_feedback[i]
 
-                    g.append((x_in - x_out_delayed) / nominal)
-                    zeros = np.zeros(n_collocation_times)
-                    lbg.extend(zeros)
-                    ubg.extend(zeros)
+                    if self.inline_delay_expressions:
+                        # Get the indices for the delayed feedback variable in the optimization
+                        # vector
+                        indices = self.__indices[ensemble_member][in_canonical]
+
+                        # Insert replacement values into appropriate slot
+                        delayed_feedback_variable_replacement[indices] = (
+                            x_out_delayed / in_nominal / in_sign
+                        )
+
+                        # Equate delayed feedback variable to zero so that the numerical solver can
+                        # remove it from the problem.
+                        #
+                        # Note: The alternative approach would be to shrink self.solver_input=X,
+                        # self.__indices, and any other variables that directly or indirectly
+                        # depend on the size and order of 'X'.  This would be a complex operation,
+                        # which would however be redundant for solvers that (like Ipopt) already
+                        # automatically detect and remove variables where lbx==ubx.
+                        lbx[indices] = 0.0
+                        ubx[indices] = 0.0
+                    else:
+                        # Default behavior: add delay expressions as equality constraints
+                        g.append((x_in - x_out_delayed) / nominal)
+                        zeros = np.zeros(n_collocation_times)
+                        lbg.extend(zeros)
+                        ubg.extend(zeros)
 
             # Objective
             f_member = self.objective(ensemble_member)
@@ -1868,7 +1908,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             f.append(self.ensemble_member_probability(ensemble_member) * f_member)
 
             if logger.getEffectiveLevel() == logging.DEBUG:
-                logger.debug("Adding objective {}".format(f_member))
+                logger.debug(f"Adding objective {f_member}")
 
             # Constraints
             constraints = self.constraints(ensemble_member)
@@ -1882,14 +1922,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     logger.debug("Adding constraint {}, {}, {}".format(*constraint))
 
             if constraints:
-                g_constraint, lbg_constraint, ubg_constraint = list(zip(*constraints))
+                g_constraint, lbg_constraint, ubg_constraint = list(zip(*constraints, strict=True))
 
                 lbg_constraint = list(lbg_constraint)
                 ubg_constraint = list(ubg_constraint)
 
                 # Broadcast lbg/ubg if it's a vector constraint
                 for i, (g_i, lbg_i, ubg_i) in enumerate(
-                    zip(g_constraint, lbg_constraint, ubg_constraint)
+                    zip(g_constraint, lbg_constraint, ubg_constraint, strict=True)
                 ):
                     s = g_i.size1()
                     if s > 1:
@@ -1898,9 +1938,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         elif lbg_i.shape[0] != g_i.shape[0]:
                             raise Exception(
                                 "Shape mismatch between constraint "
-                                "#{} ({},) and its lower bound ({},)".format(
-                                    i, g_i.shape[0], lbg_i.shape[0]
-                                )
+                                f"#{i} ({g_i.shape[0]},) and its lower bound ({lbg_i.shape[0]},)"
                             )
 
                         if not isinstance(ubg_i, np.ndarray) or ubg_i.shape[0] == 1:
@@ -1908,9 +1946,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         elif ubg_i.shape[0] != g_i.shape[0]:
                             raise Exception(
                                 "Shape mismatch between constraint "
-                                "#{} ({},) and its upper bound ({},)".format(
-                                    i, g_i.shape[0], ubg_i.shape[0]
-                                )
+                                f"#{i} ({g_i.shape[0]},) and its upper bound ({ubg_i.shape[0]},)"
                             )
 
                 g.extend(g_constraint)
@@ -1978,6 +2014,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 lbg.extend(lbg_path_constraints.transpose().ravel())
                 ubg.extend(ubg_path_constraints.transpose().ravel())
 
+        # If inlining delay expressions, carry out the single call to ca.substitute()
+        # A single call is more efficient as it constructs a single ca.Function internally,
+        # rather than one for each element of the list. Also note that we do this _outside_
+        # the ensemble member loop for speed reasons, as each substitute() roughly takes the
+        # same amount of time regardless how many expressions we are replacing.
+        if self.inline_delay_expressions:
+            g = [ca.substitute(ca.vertcat(*g), X, delayed_feedback_variable_replacement)]
+
         # NLP function
         logger.info("Creating NLP dictionary")
 
@@ -2021,7 +2065,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         return self.__solver_input
 
     def solver_options(self):
-        options = super(CollocatedIntegratedOptimizationProblem, self).solver_options()
+        options = super().solver_options()
 
         solver = options["solver"]
         assert solver in ["bonmin", "ipopt"]
@@ -2043,7 +2087,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
     def controls(self):
         return self.__controls
 
-    def _collint_get_lbx_ubx(self, bounds, count, indices):
+    def _collint_get_lbx_ubx(
+        self,
+        bounds: dict[str, BT] | list[dict[str, BT]],
+        count: int,
+        indices: list[dict[str, slice | int]],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         lbx = np.full(count, -np.inf, dtype=np.float64)
         ubx = np.full(count, np.inf, dtype=np.float64)
 
@@ -2054,6 +2103,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Bounds, defaulting to +/- inf, if not set
         for ensemble_member in range(self.ensemble_size):
+            if self.ensemble_specific_bounds:
+                bounds_member = bounds[ensemble_member]
+            else:
+                bounds_member = bounds
+
             for variable, inds in indices[ensemble_member].items():
                 variable_size = variable_sizes[variable]
 
@@ -2065,7 +2119,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     n_times = len(times)
 
                 try:
-                    bound = bounds[variable]
+                    bound = bounds_member[variable]
                 except KeyError:
                     pass
                 else:
@@ -2094,7 +2148,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             )
                         else:
                             lower_bound = bound[0]
-                        lbx[inds] = lower_bound / nominal
+                        lbx[inds] = np.maximum(lbx[inds], lower_bound / nominal)
 
                     if bound[1] is not None:
                         if isinstance(bound[1], Timeseries):
@@ -2114,13 +2168,23 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             )
                         else:
                             upper_bound = bound[1]
-                        ubx[inds] = upper_bound / nominal
+                        ubx[inds] = np.minimum(ubx[inds], upper_bound / nominal)
 
                 # Warn for NaNs
                 if np.any(np.isnan(lbx[inds])):
-                    logger.error("Lower bound on variable {} contains NaN".format(variable))
+                    logger.error(f"Lower bound on variable {variable} contains NaN")
                 if np.any(np.isnan(ubx[inds])):
-                    logger.error("Upper bound on variable {} contains NaN".format(variable))
+                    logger.error(f"Upper bound on variable {variable} contains NaN")
+
+                # Check that the lower bounds are not higher than the upper
+                # bounds. To avoid spam, we just log the first offending one per
+                # variable, not _all_ time steps.
+                if np.any(lbx[inds] > ubx[inds]):
+                    error_inds = np.where(lbx[inds] > ubx[inds])[0].tolist()
+                    logger.error(
+                        f"Lower bound {lbx[inds][error_inds[0]] * nominal} is higher than "
+                        f"upper bound {ubx[inds][error_inds[0]] * nominal} for variable {variable}"
+                    )
 
         return lbx, ubx
 
@@ -2493,10 +2557,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     else:
                         if not extrapolate and (t < times[0] or t > times[-1]):
                             raise Exception(
-                                "Cannot interpolate for {}: "
-                                "Point {} outside of range [{}, {}]".format(
-                                    canonical, t, times[0], times[-1]
-                                )
+                                f"Cannot interpolate for {canonical}: "
+                                f"Point {t} outside of range [{times[0]}, {times[-1]}]"
                             )
 
                         interpolation_method = self.interpolation_method(canonical)
@@ -2584,9 +2646,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 history_timeseries = history[canonical]
             except KeyError:
                 raise Exception(
-                    "No history found for variable {}, but a historical value was requested".format(
-                        variable
-                    )
+                    f"No history found for variable {variable}, "
+                    "but a historical value was requested"
                 )
             else:
                 history_times = history_timeseries.times[:-1]
@@ -2613,10 +2674,21 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         return x, t
 
-    def states_in(self, variable, t0=None, tf=None, ensemble_member=0):
-        x, _ = self.__states_times_in(variable, t0, tf, ensemble_member)
+    def states_in(
+        self,
+        variable: str,
+        t0: float | None = None,
+        tf: float | None = None,
+        ensemble_member: int = 0,
+        *,
+        return_times: bool = False,
+    ) -> ca.MX | tuple[ca.DM, ca.MX]:
+        x, t = self.__states_times_in(variable, t0, tf, ensemble_member)
 
-        return x
+        if return_times:
+            return x, t
+        else:
+            return x
 
     def integral(self, variable, t0=None, tf=None, ensemble_member=0):
         x, t = self.__states_times_in(variable, t0, tf, ensemble_member)
@@ -2755,11 +2827,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             if len(ensemble_members) == 1:
                 ensemble_members = ensemble_members[0]
             else:
-                ensemble_members = "[{}]".format(
-                    ",".join((str(x) for x in sorted(ensemble_members)))
-                )
+                ensemble_members = "[{}]".format(",".join(str(x) for x in sorted(ensemble_members)))
 
-            var_names.append("{}__e{}__t{}".format(var_name, ensemble_members, t_i))
+            var_names.append(f"{var_name}__e{ensemble_members}__t{t_i}")
 
         # Create named versions of the constraints
         named_x = ca.vertcat(*(ca.SX.sym(v) for v in var_names))
@@ -2806,62 +2876,62 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             lb, ub = lbg[i], ubg[i]
 
             if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
-                c_str = "{} = {}".format(c_str, lb)
+                c_str = f"{c_str} = {lb}"
             elif np.isfinite(lb) and np.isfinite(ub):
-                c_str = "{} <= {} <= {}".format(lb, c_str, ub)
+                c_str = f"{lb} <= {c_str} <= {ub}"
             elif np.isfinite(lb):
-                c_str = "{} >= {}".format(c_str, lb)
+                c_str = f"{c_str} >= {lb}"
             elif np.isfinite(ub):
-                c_str = "{} <= {}".format(c_str, ub)
+                c_str = f"{c_str} <= {ub}"
 
             return c_str
 
         # Checking for right hand side of constraints
-        logger.info("Sanity check of lbg and ubg, checking for small values (<{})".format(tol_zero))
+        logger.info(f"Sanity check of lbg and ubg, checking for small values (<{tol_zero})")
 
         lbg_abs_no_zero = np.abs(lbg.copy())
         lbg_abs_no_zero[lbg_abs_no_zero == 0.0] = +np.inf
         ind = np.argmin(lbg_abs_no_zero)
         if np.any(np.isfinite(lbg_abs_no_zero)):
-            logger.info("Smallest (absolute) lbg coefficient {}".format(lbg_abs_no_zero[ind]))
-            logger.info("E.g., {}".format(constr_to_str(ind)))
+            logger.info(f"Smallest (absolute) lbg coefficient {lbg_abs_no_zero[ind]}")
+            logger.info(f"E.g., {constr_to_str(ind)}")
         lbg_inds = lbg_abs_no_zero < tol_zero
         if np.any(lbg_inds):
-            logger.info("Too small of a (absolute) lbg found: {}".format(min(lbg[lbg_inds])))
+            logger.info(f"Too small of a (absolute) lbg found: {min(lbg[lbg_inds])}")
 
         ubg_abs_no_zero = np.abs(ubg.copy())
         ubg_abs_no_zero[ubg_abs_no_zero == 0.0] = +np.inf
         ind = np.argmin(ubg_abs_no_zero)
         if np.any(np.isfinite(ubg_abs_no_zero)):
-            logger.info("Smallest (absolute) ubg coefficient {}".format(ubg_abs_no_zero[ind]))
-            logger.info("E.g., {}".format(constr_to_str(ind)))
+            logger.info(f"Smallest (absolute) ubg coefficient {ubg_abs_no_zero[ind]}")
+            logger.info(f"E.g., {constr_to_str(ind)}")
         ubg_inds = ubg_abs_no_zero < tol_zero
         if np.any(ubg_inds):
-            logger.info("Too small of a (absolute) ubg found: {}".format(min(ubg[ubg_inds])))
+            logger.info(f"Too small of a (absolute) ubg found: {min(ubg[ubg_inds])}")
 
-        logger.info("Sanity check of lbg and ubg, checking for large values (>{})".format(tol_rhs))
+        logger.info(f"Sanity check of lbg and ubg, checking for large values (>{tol_rhs})")
 
         lbg_abs_no_inf = np.abs(lbg.copy())
         lbg_abs_no_inf[~np.isfinite(lbg_abs_no_inf)] = -np.inf
         ind = np.argmax(lbg_abs_no_inf)
         if np.any(np.isfinite(lbg_abs_no_inf)):
-            logger.info("Largest (absolute) lbg coefficient {}".format(lbg_abs_no_inf[ind]))
-            logger.info("E.g., {}".format(constr_to_str(ind)))
+            logger.info(f"Largest (absolute) lbg coefficient {lbg_abs_no_inf[ind]}")
+            logger.info(f"E.g., {constr_to_str(ind)}")
 
         lbg_inds = lbg_abs_no_inf > tol_rhs
         if np.any(lbg_inds):
-            raise Exception("Too large of a (absolute) lbg found: {}".format(max(lbg[lbg_inds])))
+            raise Exception(f"Too large of a (absolute) lbg found: {max(lbg[lbg_inds])}")
 
         ubg_abs_no_inf = np.abs(ubg.copy())
         ubg_abs_no_inf[~np.isfinite(ubg)] = -np.inf
         ind = np.argmax(ubg_abs_no_inf)
         if np.any(np.isfinite(ubg_abs_no_inf)):
-            logger.info("Largest (absolute) ubg coefficient {}".format(ubg_abs_no_inf[ind]))
-            logger.info("E.g., {}".format(constr_to_str(ind)))
+            logger.info(f"Largest (absolute) ubg coefficient {ubg_abs_no_inf[ind]}")
+            logger.info(f"E.g., {constr_to_str(ind)}")
 
         ubg_inds = ubg_abs_no_inf > tol_rhs
         if np.any(ubg_inds):
-            raise Exception("Too large of a (absolute) ubg found: {}".format(max(ubg[ubg_inds])))
+            raise Exception(f"Too large of a (absolute) ubg found: {max(ubg[ubg_inds])}")
 
         eval_point = x0 if evaluate_at_x0 else 1.0
         eval_point_str = "x0" if evaluate_at_x0 else "1.0"
@@ -2888,25 +2958,20 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # Objective
         A_obj, b_obj = out[0]
         logger.info(
-            "Statistics of objective: max & min of abs(jac(f, {}))) f({}), constants".format(
-                eval_point_str, eval_point_str
-            )
+            f"Statistics of objective: max & min of abs(jac(f, {eval_point_str}))) "
+            f"f({eval_point_str}), constants"
         )
         max_obj_A = max(np.abs(A_obj.data), default=None)
         min_obj_A = min(np.abs(A_obj.data[A_obj.data != 0.0]), default=None)
         obj_x0 = np.array(ca.Function("tmp", [in_var], [nlp["f"]])(eval_point)).ravel()[0]
         obj_b = b_obj.data[0] if len(b_obj.data) > 0 else 0.0
 
-        logger.info("{} & {}, {}, {}".format(max_obj_A, min_obj_A, obj_x0, obj_b))
+        logger.info(f"{max_obj_A} & {min_obj_A}, {obj_x0}, {obj_b}")
 
         if abs(obj_b) > tol_up:
-            logger.info(
-                "Constant '{}' in objective exceeds upper tolerance of '{}'".format(obj_b, tol_up)
-            )
+            logger.info(f"Constant '{obj_b}' in objective exceeds upper tolerance of '{tol_up}'")
         if abs(obj_b) > tol_up:
-            logger.info(
-                "Objective value at x0 '{}' exceeds upper tolerance of '{}'".format(obj_x0, tol_up)
-            )
+            logger.info(f"Objective value at x0 '{obj_x0}' exceeds upper tolerance of '{tol_up}'")
 
         # Constraints
         A_constr, b_constr = out[1]
@@ -2917,12 +2982,21 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         min_constr_A = min(np.abs(A_constr.data[A_constr.data != 0.0]), default=None)
         max_constr_b = max(np.abs(b_constr.data), default=None)
         min_constr_b = min(np.abs(b_constr.data[b_constr.data != 0.0]), default=None)
-        logger.info(
-            "{} & {}, {} & {}".format(max_constr_A, min_constr_A, max_constr_b, min_constr_b)
-        )
+        logger.info(f"{max_constr_A} & {min_constr_A}, {max_constr_b} & {min_constr_b}")
 
-        maxs = [x for x in [max_constr_A, max_constr_b, max_obj_A, obj_b] if x is not None]
-        mins = [x for x in [min_constr_A, min_constr_b, min_obj_A, obj_b] if x is not None]
+        # Filter out exactly zero, as those entries do not show up in the
+        # matrix. Shut up SonarCloud warning about this exact-to-zero
+        # comparison.
+        maxs = [
+            x
+            for x in [max_constr_A, max_constr_b, max_obj_A, obj_b]
+            if x is not None and x != 0.0  # NOSONAR
+        ]
+        mins = [
+            x
+            for x in [min_constr_A, min_constr_b, min_obj_A, obj_b]
+            if x is not None and x != 0.0  # NOSONAR
+        ]
         if (maxs and max(maxs) > tol_up) or (mins and min(mins) < tol_down):
             logger.info("Jacobian matrix /constants coefficients values outside typical range!")
 
@@ -2951,25 +3025,17 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         if exceedences:
             logger.info(
                 "Exceedence in jacobian of constraints evaluated at x0"
-                " (max > {:g}, min < {:g}, or max / min > {:g}):".format(
-                    tol_up, tol_down, tol_range
-                )
+                f" (max > {tol_up:g}, min < {tol_down:g}, or max / min > {tol_range:g}):"
             )
 
             exceedences = sorted(exceedences, key=lambda x: x[1] / x[2], reverse=True)
 
             for i, (r, max_r, min_r, c) in enumerate(exceedences):
-                logger.info(
-                    "row {} (max: {}, min: {}, range: {}):  {}".format(
-                        r, max_r, min_r, max_r / min_r, c
-                    )
-                )
+                logger.info(f"row {r} (max: {max_r}, min: {min_r}, range: {max_r / min_r}):  {c}")
 
                 if i >= 9:
                     logger.info(
-                        "Too many warnings of same type ({} others remain).".format(
-                            len(exceedences) - 10
-                        )
+                        f"Too many warnings of same type ({len(exceedences) - 10} others remain)."
                     )
                     break
 
@@ -3022,24 +3088,18 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         exceedences = sorted(exceedences, key=lambda x: x[1], reverse=True)
 
-        logger.info("Max range found: {}".format(max_range_found))
+        logger.info(f"Max range found: {max_range_found}")
         if exceedences:
-            logger.info("Exceedence in range per column (max / min > {:g}):".format(tol_range))
+            logger.info(f"Exceedence in range per column (max / min > {tol_range:g}):")
 
             for i, (c, exc, min_, max_, c_min_str, c_max_str) in enumerate(exceedences):
-                logger.info(
-                    "col {} ({}):  range {}, min {}, max {}".format(
-                        c, var_names[c], exc, min_, max_
-                    )
-                )
+                logger.info(f"col {c} ({var_names[c]}):  range {exc}, min {min_}, max {max_}")
                 logger.info(c_min_str)
                 logger.info(c_max_str)
 
                 if i >= 9:
                     logger.info(
-                        "Too many warnings of same type ({} others remain).".format(
-                            len(exceedences) - 10
-                        )
+                        f"Too many warnings of same type ({len(exceedences) - 10} others remain)."
                     )
                     break
 
@@ -3047,7 +3107,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         max_range_found = 1.0
 
         exceedences = []
-        for c, d in zip(A_obj.col, A_obj.data):
+        for c, d in zip(A_obj.col, A_obj.data, strict=True):
             cofc = coeffs[c]
 
             if cofc is None:
@@ -3065,24 +3125,19 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             if max_range > tol_range:
                 exceedences.append((c, max_range, obj_coeff, min_r, max_r))
 
-        logger.info("Max range found: {}".format(max_range_found))
+        logger.info(f"Max range found: {max_range_found}")
         if exceedences:
-            logger.info(
-                "Exceedence in range of objective variable (range > {:g}):".format(tol_range)
-            )
+            logger.info(f"Exceedence in range of objective variable (range > {tol_range:g}):")
 
             for i, (c, max_range, obj_coeff, min_r, max_r) in enumerate(exceedences):
                 logger.info(
-                    "col {} ({}): range: {}, obj: {}, min constr: {}, max constr {}".format(
-                        c, var_names[c], max_range, obj_coeff, min_r, max_r
-                    )
+                    f"col {c} ({var_names[c]}): range: {max_range}, obj: {obj_coeff}, "
+                    f"min constr: {min_r}, max constr {max_r}"
                 )
 
                 if i >= 9:
                     logger.info(
-                        "Too many warnings of same type ({} others remain).".format(
-                            len(exceedences) - 10
-                        )
+                        f"Too many warnings of same type ({len(exceedences) - 10} others remain)."
                     )
                     break
 
@@ -3126,11 +3181,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             if exceedences:
                 logger.info(
                     "Variables with at least one (absolute) state vector entry/entries "
-                    "larger than {}".format(tol_up)
+                    f"larger than {tol_up}"
                 )
 
             for k, v in exceedences:
-                logger.info("{}: abs max = {}".format(k, v))
+                logger.info(f"{k}: abs max = {v}")
 
         if len(inds_down) > 0:
             exceedences = []
@@ -3145,11 +3200,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 ignore_all_zero_string = " (but not all zero)" if ignore_all_zero else ""
                 logger.info(
                     "Variables with all (absolute) state vector entry/entries "
-                    "smaller than {}{}".format(tol_down, ignore_all_zero_string)
+                    f"smaller than {tol_down}{ignore_all_zero_string}"
                 )
 
             for k, v in exceedences:
                 if ignore_all_zero and v == 0.0:
                     continue
 
-                logger.info("{}: abs max = {}".format(k, v))
+                logger.info(f"{k}: abs max = {v}")
