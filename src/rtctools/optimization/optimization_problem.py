@@ -46,6 +46,9 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     _debug_check_level = DebugLevel.MEDIUM
     _debug_check_options = {}
 
+    #: Enable ensemble-specific bounds functionality
+    ensemble_specific_bounds = False
+
     def __init__(self, **kwargs):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
