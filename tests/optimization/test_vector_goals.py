@@ -203,6 +203,46 @@ class ModelPathGoalsVector(Model):
         return [PathGoal1_2(self), PathGoal3(self)]
 
 
+class ModelDelay(GoalProgrammingMixin, ModelicaMixin, CollocatedIntegratedOptimizationProblem):
+    def __init__(self, inline_delay_expressions=False):
+        super().__init__(
+            input_folder=data_path(),
+            output_folder=data_path(),
+            model_name="ModelDelay",
+            model_folder=data_path(),
+        )
+        self.inline_delay_expressions = inline_delay_expressions
+
+    def times(self, variable=None):
+        # Collocation points
+        return np.linspace(0.0, 1.0, 21)
+
+    def goals(self):
+        return [Goal1_2_3(), Goal2()]
+
+    def goal_programming_options(self):
+        goal_programming_options = super().goal_programming_options()
+        goal_programming_options["keep_soft_constraints"] = True
+        return goal_programming_options
+
+    def objective(self, ensemble_member):
+        # Quadratic penalty on state 'x' at final time
+        xf = self.state_at("x", self.times("x")[-1], ensemble_member=ensemble_member)
+        return xf**2
+
+    def compiler_options(self):
+        compiler_options = super().compiler_options()
+        compiler_options["cache"] = False
+        compiler_options["library_folders"] = []
+        return compiler_options
+
+    def history(self, ensemble_member):
+        history = super().history(ensemble_member)
+        history["x"] = Timeseries(np.array([-0.2, -0.1, 0.0]), np.array([0.7, 0.9, 1.1]))
+        history["w"] = Timeseries(np.array([-0.1, 0.0]), np.array([0.9, np.nan]))
+        return history
+
+
 class TestVectorGoals(TestCase):
     """
     NOTE: As long as the order of goals/constraints is the same, whether or not they are passed
@@ -299,3 +339,16 @@ class TestVectorGoalsScaleProblemSize(TestCase):
 
         self.assertListEqual(self.problem1._objective_values, self.problem2._objective_values)
         self.assertTrue(np.array_equal(results1["x"], results2["x"]))
+
+
+class TestVectorGoalsWithDelay(TestCase):
+    """
+    NOTE: As long as the order of goals/constraints is the same, whether or not they are passed
+    as a vector or not should not matter. Therefore we often check to see if two problems
+    are _exactly_ equal.
+    """
+
+    def test_vector_goals(self):
+        self.problem1 = ModelDelay()
+        self.problem1.optimize()
+        assert True
