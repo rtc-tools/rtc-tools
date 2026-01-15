@@ -56,8 +56,6 @@ def substitute_in_external(
 
     if not expr or len(symbols) == 0 or all(isinstance(x, ca.DM) for x in expr):
         return expr
-    elif not expr:
-        return []
     elif not resolve_numerically:
         f = ca.Function("f", symbols, expr)
         return f.call(values, True, False)
