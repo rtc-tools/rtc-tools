@@ -10,6 +10,7 @@ exclude = '''
 [tool.ruff]
 lint.ignore = [
 	"B904", # Fix someday: raising exceptions within except
+	"B905", # zip() without explicit strict parameter - not available in Python 3.9
 ]
 line-length = 100
 lint.select = [
