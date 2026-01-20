@@ -53,7 +53,7 @@ Commercial Support
 For applications in water management and hydropower, `Deltares <https://www.deltares.nl/>`_
 offers commercial support.
 
-For applications in power trading and battery energy storage systems (BESS),
+For applications in power trading and Battery Energy Storage Systems (BESS),
 `PortfolioEnergy <https://www.portfolioenergy.com/>`_ offers commercial
 support.
 
@@ -61,11 +61,10 @@ Governance & Roadmap
 --------------------
 
 RTC-Tools development follows an open governance model. To learn more about
-the project roadmap and contribute to future development:
+the project roadmap:
 
 - Review the `roadmap discussion <https://github.com/rtc-tools/rtc-tools/discussions/1725>`_
 - Check `project milestones <https://github.com/rtc-tools/rtc-tools/milestones>`_
-- Watch the `feature overview video <https://www.youtube.com/watch?v=GAuQ5ft8vr4>`_
 
 Documentation Overview
 ----------------------
