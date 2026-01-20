@@ -50,6 +50,12 @@ pip install rtc-tools
 
 Documentation and examples can be found on [readthedocs](https://rtc-tools.readthedocs.io).
 
+## Contributing
+
+We welcome contributions to RTC-Tools! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started, coding standards, and our development process.
+
+The project is governed according to our [Technical Charter](CHARTER.md) and [Governance Model](GOVERNANCE.md).
+
 
 ## Migration from GitLab
 
