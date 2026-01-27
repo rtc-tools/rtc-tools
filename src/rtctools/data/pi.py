@@ -502,14 +502,13 @@ class Timeseries:
                 self.__times = [self.__start_datetime + i * self.__dt for i in range(t_len)]
             else:  # Timeseries are non-equidistant
                 self.__times = []
+                times_set = set()
                 for series in self.__xml_root.findall("pi:series", ns):
                     events = series.findall("pi:event", ns)
-                    # We assume that timeseries can differ in length, but always are
-                    # a complete 'slice' of datetimes between start and end. The
-                    # longest timeseries then contains all datetimes between start and end.
-                    if len(events) > len(self.__times):
-                        self.__times = [self.__parse_date_time(e) for e in events]
-
+                    # The union of all timeseries covers all the run-period (e.g.history)
+                    times_of_timeseries = [self.__parse_date_time(e) for e in events]
+                    times_set.update(times_of_timeseries)
+                self.__times = sorted(times_set)
             # Check if the time steps of all series match the time steps of the global
             # time range.
             if pi_validate_times:
