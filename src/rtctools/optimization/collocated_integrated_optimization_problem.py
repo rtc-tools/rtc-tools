@@ -1738,7 +1738,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                                 ca.repmat(np.nan, len(self.path_variables)),
                                 ca.repmat(np.nan, len(self.__extra_constant_inputs)),
                             ),
-                            ca.repmat(np.nan, len(self.extra_variables)),
+                            ca.repmat(np.nan, symbolic_extra_variables.numel()),
                         ]
                     )
                     delayed_feedback_history[i, :] = [
