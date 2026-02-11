@@ -141,6 +141,7 @@ class PumpStorage(
         options = super().solver_options()
         options["casadi_solver"] = "qpsol"
         options["solver"] = "highs"
+        options["export_model"] = True
         return options
 
     def post(self):

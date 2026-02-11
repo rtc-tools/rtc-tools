@@ -81,6 +81,7 @@ class Example(CSVMixin, ModelicaMixin, CollocatedIntegratedOptimizationProblem):
         # Restrict solver output
         solver = options["solver"]
         options[solver]["print_level"] = 1
+        options["export_model"] = True
         return options
 
 
