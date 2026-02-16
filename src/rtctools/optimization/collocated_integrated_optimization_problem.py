@@ -398,6 +398,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     [parameter_values],
                     self.dae_variables["parameters"],
                     ca.vertsplit(parameter_values),
+                    resolve_numerically=False,
                 )
             else:
                 parameter_values = nullvertcat(*parameter_values)
@@ -2217,15 +2218,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         )
 
                     if isinstance(seed_k, Timeseries):
-                        x0[inds] = (
+                        seed_k = (
                             self.interpolate(
                                 times, seed_k.times, seed_k.values, 0, 0, interpolation_method
                             )
                             .transpose()
                             .ravel()
                         )
-                    else:
-                        x0[inds] = seed_k
+                    if isinstance(inds, int) and isinstance(seed_k, np.ndarray):
+                        seed_k = seed_k.item()
+                    x0[inds] = seed_k
 
                     x0[inds] /= nominal
                 except KeyError:

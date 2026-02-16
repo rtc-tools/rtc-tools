@@ -283,7 +283,10 @@ class ModelicaMixin(OptimizationProblem):
                     # If start contains symbolics, try substituting parameter values
                     if isinstance(start, ca.MX) and not start.is_constant():
                         [start] = substitute_in_external(
-                            [start], self.__mx["parameters"], parameter_values
+                            [start],
+                            self.__mx["parameters"],
+                            parameter_values,
+                            resolve_numerically=True,
                         )
                         if not start.is_constant() or np.isnan(float(start)):
                             raise Exception(
@@ -334,14 +337,18 @@ class ModelicaMixin(OptimizationProblem):
 
             m_ = v.min
             if isinstance(m_, ca.MX) and not m_.is_constant():
-                [m_] = substitute_in_external([m_], self.__mx["parameters"], parameter_values)
+                [m_] = substitute_in_external(
+                    [m_], self.__mx["parameters"], parameter_values, resolve_numerically=True
+                )
                 if not m_.is_constant() or np.isnan(float(m_)):
                     raise Exception(f"Could not resolve lower bound for variable {sym_name}")
             m_ = float(m_)
 
             M_ = v.max
             if isinstance(M_, ca.MX) and not M_.is_constant():
-                [M_] = substitute_in_external([M_], self.__mx["parameters"], parameter_values)
+                [M_] = substitute_in_external(
+                    [M_], self.__mx["parameters"], parameter_values, resolve_numerically=True
+                )
                 if not M_.is_constant() or np.isnan(float(M_)):
                     raise Exception(f"Could not resolve upper bound for variable {sym_name}")
             M_ = float(M_)
@@ -379,7 +386,7 @@ class ModelicaMixin(OptimizationProblem):
                 # If start contains symbolics, try substituting parameter values
                 if isinstance(start, ca.MX) and not start.is_constant():
                     [start] = substitute_in_external(
-                        [start], self.__mx["parameters"], parameter_values
+                        [start], self.__mx["parameters"], parameter_values, resolve_numerically=True
                     )
                     if not start.is_constant() or np.isnan(float(start)):
                         logger.error(f"ModelicaMixin: Could not resolve seed value for {sym_name}")
@@ -424,7 +431,7 @@ class ModelicaMixin(OptimizationProblem):
             # If nominal contains parameter symbols, substitute them
             if isinstance(nominal, ca.MX) and not nominal.is_constant():
                 [nominal] = substitute_in_external(
-                    [nominal], self.__mx["parameters"], parameter_values
+                    [nominal], self.__mx["parameters"], parameter_values, resolve_numerically=True
                 )
                 if not nominal.is_constant() or np.isnan(float(nominal)):
                     logger.error(f"ModelicaMixin: Could not resolve nominal value for {sym_name}")

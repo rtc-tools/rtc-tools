@@ -33,8 +33,10 @@ runs:
 
         if [[ "${{ inputs.resolution-mode }}" == "lowest" ]]; then
           CMD_PARTS+=("--resolution" "lowest-direct")
+          echo "UV_RESOLUTION=lowest-direct" >> $GITHUB_ENV
         elif [[ "${{ inputs.resolution-mode }}" == "highest" ]]; then
           CMD_PARTS+=("--upgrade")
+          echo "UV_RESOLUTION=highest" >> $GITHUB_ENV
         else # Default to "frozen"
           CMD_PARTS+=("--frozen")
         fi
