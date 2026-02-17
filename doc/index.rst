@@ -5,7 +5,7 @@
 
 .. highlight:: python
 
-.. image:: images/logo.png
+.. image:: images/rtc-tools-icon-color.png
 	:align: right
 	:scale: 50%
 
