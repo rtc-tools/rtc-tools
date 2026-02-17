@@ -1023,6 +1023,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         path_variables_size = sum(x.size1() for x in self.path_variables)
         extra_constant_inputs_size = sum(x.size1() for x in self.__extra_constant_inputs)
+        extra_variables_size = sum(x.size1() for x in self.extra_variables)
 
         accumulated_U = ca.MX.sym(
             "accumulated_U",
@@ -1738,7 +1739,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                                 ca.repmat(np.nan, len(self.path_variables)),
                                 ca.repmat(np.nan, len(self.__extra_constant_inputs)),
                             ),
-                            ca.repmat(np.nan, len(self.extra_variables)),
+                            ca.repmat(np.nan, extra_variables_size),
                         ]
                     )
                     delayed_feedback_history[i, :] = [
