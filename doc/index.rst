@@ -5,9 +5,9 @@
 
 .. highlight:: python
 
-.. image:: images/logo.png
+.. image:: https://artwork.lfenergy.org/projects/rtc-tools/horizontal/color/rtc-tools-horizontal-color.svg
 	:align: right
-	:scale: 50%
+	:width: 300px
 
 RTC-Tools documentation
 =======================
@@ -15,7 +15,7 @@ RTC-Tools documentation
 RTC-Tools is an open-source Python package designed to model, simulate,
 and optimize networks or portfolios of assets, such as 
 reservoirs, pumps, renewables, and batteries. It is part 
-of `LF Energy <https://lfenergy.org/>`_.
+of `LF Energy <https://lfenergy.org/projects/rtc-tools/>`_.
 
 RTC-Tools provides a modular and extensible framework for operational
 optimization and control of complex systems across multiple domains, with a
@@ -48,7 +48,7 @@ Commercial Support
 For applications in water management and hydropower, `Deltares <https://www.deltares.nl/>`_
 offers commercial support.
 
-For applications in power trading and battery energy storage systems (BESS),
+For applications in power trading and Battery Energy Storage Systems (BESS),
 `PortfolioEnergy <https://www.portfolioenergy.com/>`_ offers commercial
 support.
 
@@ -56,11 +56,10 @@ Governance & Roadmap
 --------------------
 
 RTC-Tools development follows an open governance model. To learn more about
-the project roadmap and contribute to future development:
+the project roadmap:
 
 - Review the `roadmap discussion <https://github.com/rtc-tools/rtc-tools/discussions/1725>`_
 - Check `project milestones <https://github.com/rtc-tools/rtc-tools/milestones>`_
-- Watch the `feature overview video <https://www.youtube.com/watch?v=GAuQ5ft8vr4>`_
 
 Documentation Overview
 ----------------------

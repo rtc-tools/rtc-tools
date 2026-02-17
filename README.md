@@ -1,5 +1,9 @@
 # RTC-Tools
 
+<p align="center">
+  <img src="https://artwork.lfenergy.org/projects/rtc-tools/horizontal/color/rtc-tools-horizontal-color.svg" alt="RTC-Tools Logo" width="400">
+</p>
+
 [![Pipeline](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml/badge.svg)](
     https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml
 )
@@ -7,12 +11,12 @@
     https://sonarcloud.io/api/project_badges/measure?project=Deltares_rtc-tools&metric=coverage
 )](https://sonarcloud.io/summary/new_code?id=Deltares_rtc-tools)
 
-> **NOTE** The rtc-tools repository has been migrated from gitlab to here;
-see [migration from gitlab](#migration-from-gitlab).
+> **NOTE** The RTC-Tools repository has been migrated from GitLab to here;
+see [Migration from GitLab](#migration-from-gitlab).
 
 ## Project Overview
 
-RTC-Tools is an open-source Python package designed to model, simulate, and optimize networks or portfolios of assets, such as reservoirs, pumps, renewables, and batteries. It is part of [LF Energy](https://lfenergy.org/).
+RTC-Tools is an open-source Python package designed to model, simulate, and optimize networks or portfolios of assets, such as reservoirs, pumps, renewables, and batteries. It is part of [LF Energy](https://lfenergy.org/projects/rtc-tools/).
 
 ## Project Description
 
@@ -21,7 +25,7 @@ RTC-Tools provides a modular and extensible framework for operational optimizati
 ### Application Domains
 
 - **Water Management**: Model-predictive control of canals, polders, reservoirs, hydropower scheduling, and pumped storage systems, including turbines, pumps, weirs, and other hydraulic structures.
-- **Energy Systems**: Battery energy storage system (BESS) optimization, power trading, heat network design, and multi-energy system planning.
+- **Energy Systems**: Battery Energy Storage System (BESS) optimization, power trading, heat network design, and multi-energy system planning.
 
 ### Multi-Domain Modeling Libraries
 
@@ -70,12 +74,18 @@ Documentation and examples are available at:
 - [Stable documentation](https://rtc-tools.readthedocs.io/en/stable/)
 - [Latest documentation](https://rtc-tools.readthedocs.io/en/latest/)
 
+## Contributing
+
+We welcome contributions to RTC-Tools! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started, coding standards, and our development process.
+
+The project is governed according to our [Technical Charter](CHARTER.md) and [Governance Model](GOVERNANCE.md).
+
 
 ## Migration from GitLab
 
-The rtc-tools repository has been migrated from gitlab (https://gitlab.com/rtc-tools/rtc-tools)
+The RTC-Tools repository has been migrated from GitLab (https://gitlab.com/rtc-tools/rtc-tools)
 to here.
-To change the git remote url, run
+To change the Git remote URL, run
 
 `git remote set-url origin https://github.com/rtc-tools/rtc-tools.git`
 
@@ -101,17 +111,17 @@ For questions, issues, and discussions, please use:
 
 For applications in water management and hydropower, [Deltares](https://www.deltares.nl/) offers commercial support.
 
-For applications in power trading and battery energy storage systems (BESS), [PortfolioEnergy](https://www.portfolioenergy.com/) offers commercial support.
+For applications in power trading and Battery Energy Storage Systems (BESS), [PortfolioEnergy](https://www.portfolioenergy.com/) offers commercial support.
 
 
 ## Governance & Roadmap
 
-RTC-Tools development follows an open governance model. To learn more about the project roadmap and contribute to future development:
+RTC-Tools development follows an open governance model as defined in our [Technical Charter](CHARTER.md) and [Governance](GOVERNANCE.md) documents.
+
+To learn more about the project roadmap:
 
 - Review the [roadmap discussion](https://github.com/rtc-tools/rtc-tools/discussions/1725)
 - Check [project milestones](https://github.com/rtc-tools/rtc-tools/milestones)
-- Watch the [feature overview video](https://www.youtube.com/watch?v=GAuQ5ft8vr4)
-- See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines
 
 
 ## Ecosystem & Collaboration
@@ -122,4 +132,3 @@ RTC-Tools is part of the LF Energy ecosystem and actively welcomes collaboration
 ## Acknowledgment
 
 If you use RTC-Tools in your work, please acknowledge it in any resulting publications. You can do this by citing the RTC-Tools software and providing a link to our [GitHub repository](https://github.com/rtc-tools/rtc-tools).
-
