@@ -1,3 +1,8 @@
+/* scale down the sidebar logo */
+.wy-side-nav-search img.logo {
+   width: 70% !important;
+}
+
 /* override table width restrictions */
 @media screen and (min-width: 767px) {
 

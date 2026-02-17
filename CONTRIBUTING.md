@@ -90,12 +90,12 @@ uv sync
 
 To ensure that your code meets our standards, we recommend using pre-commit.
 Run the following command to set up the pre-commit hook:
+
 ```bash
 pre-commit install
 ```
-. This will
-automatically check your code for formatting and linting issues before each
-commit.
+
+This will automatically check your code for formatting and linting issues before each commit.
 
 
 To run the tests:
@@ -104,12 +104,15 @@ To run the tests:
 pytest tests
 ```
 
-To build the documentation:
+To build the documentation, the required dependencies are in the `docs` dependency group from `pyproject.toml`.
+Run these commands from the repository root:
 
 ```bash
-cd doc
-make html
+uv sync --group docs
+uv run sphinx-build -b html doc doc/_build/html
 ```
+
+The built HTML pages will be in `doc/_build/html/`.
 
 ## Version numbering and release cycle
 

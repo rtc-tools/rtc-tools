@@ -141,6 +141,9 @@ html_static_path = ["_static"]
 html_css_files = [
     "theme_overrides.css",  # override wide tables in RTD theme
 ]
+html_js_files = [
+    "external_links.js",  # open external links in a new tab
+]
 
 # The name for this set of Sphinx documents.
 # "<project> v<release> documentation" by default.
@@ -154,7 +157,7 @@ html_css_files = [
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
 #
-# html_logo = None
+html_logo = "images/rtc-tools-horizontal-white.svg"
 
 # The name of an image file (relative to this directory) to use as a favicon of
 # the docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
@@ -165,7 +168,7 @@ html_css_files = [
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
+# html_static_path = ['_static']  # defined above near html_css_files
 
 # Add any extra paths that contain custom files (such as robots.txt or
 # .htaccess) here, relative to this directory. These files are copied

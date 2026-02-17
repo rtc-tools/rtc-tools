@@ -30,3 +30,4 @@ examples/**/output/**/*.csv
 
 # Virtual environment
 .venv
+venv

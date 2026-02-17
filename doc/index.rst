@@ -5,9 +5,14 @@
 
 .. highlight:: python
 
-.. image:: images/logo.png
-	:align: right
-	:scale: 50%
+.. image:: images/rtc-tools-horizontal-color.svg
+  :align: center
+  :width: 70%
+  :alt: RTC-Tools logo
+
+.. raw:: html
+
+   <br>
 
 RTC-Tools documentation
 =======================
@@ -15,7 +20,7 @@ RTC-Tools documentation
 RTC-Tools is an open-source Python package designed to model, simulate,
 and optimize networks or portfolios of assets, such as 
 reservoirs, pumps, renewables, and batteries. It is part 
-of `LF Energy <https://lfenergy.org/>`_.
+of `LF Energy <https://lfenergy.org/projects/rtc-tools/>`_.
 
 RTC-Tools provides a modular and extensible framework for operational
 optimization and control of complex systems across multiple domains, with a
