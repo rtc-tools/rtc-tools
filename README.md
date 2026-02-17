@@ -1,4 +1,6 @@
-# RTC-Tools
+<p align="center">
+  <img src="doc/images/rtc-tools-horizontal-color.svg" alt="RTC-Tools logo" width="70%">
+</p>
 
 [![Pipeline](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml/badge.svg)](
     https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml
@@ -12,7 +14,7 @@ see [migration from gitlab](#migration-from-gitlab).
 
 ## Project Overview
 
-RTC-Tools is an open-source Python package designed to model, simulate, and optimize networks or portfolios of assets, such as reservoirs, pumps, renewables, and batteries. It is part of [LF Energy](https://lfenergy.org/).
+RTC-Tools is an open-source Python package designed to model, simulate, and optimize networks or portfolios of assets, such as reservoirs, pumps, renewables, and batteries. It is part of [LF Energy](https://lfenergy.org/projects/rtc-tools/).
 
 ## Project Description
 
