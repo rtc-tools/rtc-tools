@@ -56,6 +56,8 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         self.__problem_path_epsilons = []
         self.__problem_path_timeseries = []
         self.__problem_parameters = []
+        self._gp_current_priority = None  # Set to the active priority during optimize()
+        self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
 
     @property
     def extra_variables(self):
@@ -691,8 +693,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         self.__results_are_current = False
         self.__original_constant_input_keys = {}
         self.__original_parameter_keys = {}
+        self._gp_n_priorities = len(subproblems)
         for i, (priority, goals, path_goals) in enumerate(subproblems):
             logger.info(f"Solving goals at priority {priority}")
+            self._gp_current_priority = priority
 
             # Call the pre priority hook
             self.priority_started(priority)
