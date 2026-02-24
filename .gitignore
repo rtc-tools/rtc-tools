@@ -30,3 +30,6 @@ examples/**/output/**/*.csv
 
 # Virtual environment
 .venv
+
+# Exclude from version control
+*_efvc*

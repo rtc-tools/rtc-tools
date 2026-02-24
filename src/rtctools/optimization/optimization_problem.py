@@ -1,11 +1,21 @@
 import logging
+import os
 from abc import ABCMeta, abstractmethod, abstractproperty
+from time import time_ns
 from typing import Any, Literal, overload
 
 import casadi as ca
 import numpy as np
 
 from rtctools._internal.alias_tools import AliasDict
+from rtctools._internal.casadi_helpers import is_affine
+from rtctools._internal.casadi_to_LP import (
+    build_bounds,
+    build_constraints,
+    build_objective,
+    sanitize_var_names,
+    write_lp_file,
+)
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
 from rtctools.data.storage import DataStoreAccessor
@@ -101,10 +111,12 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         logger.debug("Creating solver")
 
-        if options.pop("expand", False):
+        expand = options.pop("expand", False)
+        export_model = options.pop("export_model", False)
+        if expand or export_model:
             # NOTE: CasADi only supports the "expand" option for nlpsol. To
             # also be able to expand with e.g. qpsol, we do the expansion
-            # ourselves here.
+            # ourselves here. Expansion is also required for LP export.
             logger.debug("Expanding objective and constraints to SX")
 
             expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
@@ -114,6 +126,9 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             nlp["f"] = f_sx
             nlp["g"] = g_sx
             nlp["x"] = X_sx
+
+            if export_model:
+                self._export_lp_file(expand_f_g, lbg, ubg, lbx, ubx, discrete)
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -222,6 +237,112 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         return success
 
+    def _export_lp_file(
+        self,
+        expand_f_g: ca.Function,
+        lbg: list,
+        ubg: list,
+        lbx: list,
+        ubx: list,
+        discrete: list[bool],
+    ) -> None:
+        """Export the transcribed problem as an LP file if linear.
+
+        Called by optimize() when export_model=True. Validates that the problem
+        is compatible with LP export (linear collocation constraints and affine
+        objective/constraints), builds the LP file representation, and writes it
+        to the output folder.
+
+        Args:
+            expand_f_g: Expanded CasADi function (objective and constraints).
+            lbg, ubg: Lower/upper bounds on constraints.
+            lbx, ubx: Lower/upper bounds on variables.
+            discrete: Boolean array indicating discrete variables.
+
+        Raises:
+            ValueError: If the problem does not inherit from
+                CollocatedIntegratedOptimizationProblem, has non-linear collocation
+                constraints, or has non-affine objective/constraints.
+        """
+        # linear_collocation is defined on CollocatedIntegratedOptimizationProblem;
+        # it is None before transcription, True/False after transcription completes.
+        linear_collocation = getattr(self, "linear_collocation", None)
+        if linear_collocation is None:
+            raise ValueError(
+                "LP export is only supported for CollocatedIntegratedOptimizationProblem "
+                "subclasses. This problem does not have a linear_collocation attribute, "
+                "which indicates it does not inherit from "
+                "CollocatedIntegratedOptimizationProblem."
+            )
+        if linear_collocation:
+            # LP export is only supported for single-ensemble problems
+            if self.ensemble_size != 1:
+                raise ValueError(
+                    f"LP export is only supported for single-ensemble problems "
+                    f"(ensemble_size=1), but this problem has ensemble_size={self.ensemble_size}."
+                )
+
+            # Evaluate expand_f_g to check affinity: f and g must be affine in X
+            X = ca.SX.sym("X", expand_f_g.nnz_in())
+            f, g = expand_f_g(X)
+
+            # Check that objective is affine in decision variables
+            if not is_affine(f, X):
+                raise ValueError(
+                    "LP export requires the objective function to be affine in the "
+                    "decision variables, but the objective is non-linear. "
+                    "This can occur when the user-provided objective() or extra "
+                    "constraints are non-linear, even if linear_collocation=True."
+                )
+
+            # Check that constraints are affine in decision variables
+            if not is_affine(g, X):
+                raise ValueError(
+                    "LP export requires all constraints to be affine in the "
+                    "decision variables, but some constraints are non-linear. "
+                    "This can occur when the user-provided constraints are non-linear, "
+                    "even if linear_collocation=True."
+                )
+
+            # variable_indices is guaranteed to be populated here: transcribe() (called
+            # in optimize()) sets it before returning. For ensemble_size=1, [0] is always
+            # a valid index and correctly covers all decision variables.
+            var_names = sanitize_var_names(
+                self.variable_indices[0],
+                expand_f_g.nnz_in(),
+            )
+            obj_str = build_objective(expand_f_g, var_names)
+            constr_str = build_constraints(expand_f_g, lbg, ubg, var_names)
+            bounds_str = build_bounds(var_names, lbx, ubx)
+
+            # Generate filename with nanosecond-resolution timestamp to avoid collisions
+            # in rapid-fire exports or parallel execution
+            timestamp_ns = time_ns()
+            filename = f"{self.__class__.__name__}_{timestamp_ns}.lp"
+            filepath = os.path.join(self._output_folder, filename)
+
+            # Fail if file already exists to avoid silent overwrites
+            if os.path.exists(filepath):
+                raise FileExistsError(
+                    f"LP export file '{filepath}' already exists. "
+                    "Use a different output folder to avoid collisions."
+                )
+
+            write_lp_file(
+                filename,
+                obj_str,
+                constr_str,
+                bounds_str,
+                var_names,
+                discrete,
+                output_folder=self._output_folder,
+            )
+        else:
+            raise ValueError(
+                "LP export requires linear collocation constraints, "
+                "but linear_collocation is False for this problem."
+            )
+
     def __check_bounds_control_input(self) -> None:
         # Checks if at the control inputs have bounds, log warning when a control input is not
         # bounded.
@@ -265,10 +386,24 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         The default solver for mixed integer problems is `Bonmin
         <http://projects.coin-or.org/Bonmin/>`_.
 
+        RTC-Tools specific options (consumed before passing the remainder to CasADi):
+
+        * ``export_model`` (:class:`bool`, default ``False``): Export the transcribed problem
+          as an LP file to the output folder. The file is named
+          ``<ClassName>_<nanosecond_timestamp>.lp``. Only supported for problems where
+          :attr:`linear_collocation` is ``True``. Raises :exc:`ValueError` if the problem
+          is not linear. Useful for debugging solver behaviour or passing the problem to
+          an external LP solver.
+
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
         """
-        options = {"error_on_fail": False, "optimized_num_dir": 3, "casadi_solver": ca.nlpsol}
+        options = {
+            "error_on_fail": False,
+            "optimized_num_dir": 3,
+            "casadi_solver": ca.nlpsol,
+            "export_model": False,
+        }
 
         if self.__mixed_integer:
             options["solver"] = "bonmin"

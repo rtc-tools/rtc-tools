@@ -1932,7 +1932,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 for i, (g_i, lbg_i, ubg_i) in enumerate(
                     zip(g_constraint, lbg_constraint, ubg_constraint, strict=True)
                 ):
-                    s = g_i.size1()
+                    # Handle scalar constraints (float/int) vs CasADi expressions
+                    if isinstance(g_i, (int, float)):
+                        s = 1
+                    else:
+                        s = g_i.size1()
                     if s > 1:
                         if not isinstance(lbg_i, np.ndarray) or lbg_i.shape[0] == 1:
                             lbg_constraint[i] = np.full(s, lbg_i)
@@ -2064,6 +2068,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
     @property
     def solver_input(self):
         return self.__solver_input
+
+    @property
+    def variable_indices(self) -> list[dict]:
+        """Variable name to index mapping for each ensemble member."""
+        return self.__indices
 
     def solver_options(self):
         options = super().solver_options()
