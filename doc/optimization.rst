@@ -17,3 +17,4 @@ Contents:
    optimization/initial_state_estimation
    optimization/multi_objective
    optimization/forecast_uncertainty
+   optimization/open_channel_flow_validation

@@ -1,3 +1,5 @@
+.. _channel_pulse:
+
 Modeling Waves in Rivers and Canals
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
