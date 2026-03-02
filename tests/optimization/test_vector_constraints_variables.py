@@ -775,6 +775,22 @@ class InvalidVectorConstraintUbg(ModelAdditionalVariablesVector):
         return constraints
 
 
+class ModelScalarConstraints(Model):
+    """Returns plain Python float and numpy scalar as constraints."""
+
+    def constraints(self, ensemble_member):
+        return [
+            (1.0, 1.0, 1.0),
+            (np.float64(0.5), 0.0, 1.0),
+        ]
+
+
+class TestScalarConstraints(TestCase):
+    def test_scalar_constraints_do_not_raise(self):
+        """Scalar float/numpy constraint values must be accepted without raising AttributeError."""
+        ModelScalarConstraints().transcribe()
+
+
 class TestInvalidVectorConstraints(TestCase):
     def test_vector_constraint_lbg(self):
         self.problem = InvalidVectorConstraintLbg()
