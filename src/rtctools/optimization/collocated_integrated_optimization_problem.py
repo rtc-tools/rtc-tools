@@ -1932,7 +1932,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 for i, (g_i, lbg_i, ubg_i) in enumerate(
                     zip(g_constraint, lbg_constraint, ubg_constraint, strict=True)
                 ):
-                    s = g_i.size1()
+                    s = g_i.size1() if hasattr(g_i, "size1") else 1
                     if s > 1:
                         if not isinstance(lbg_i, np.ndarray) or lbg_i.shape[0] == 1:
                             lbg_constraint[i] = np.full(s, lbg_i)
