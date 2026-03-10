@@ -14,6 +14,7 @@ import pymoca.backends.casadi.api
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.caching import cached
 from rtctools._internal.debug_check_helpers import DebugLevel
+from rtctools._internal.modelica_errors import raise_if_missing_msl
 from rtctools.data.storage import DataStoreAccessor
 
 logger = logging.getLogger("rtctools")
@@ -89,6 +90,7 @@ class SimulationProblem(DataStoreAccessor):
                 kwargs["model_folder"], model_name, compiler_options
             )
         except RuntimeError as error:
+            raise_if_missing_msl(error, kwargs["model_folder"])
             if compiler_options.get("cache", False):
                 raise error
             compiler_options["cache"] = False

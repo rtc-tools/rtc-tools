@@ -119,3 +119,92 @@ def download_examples(*args):
         os.remove(local_filename)
     except OSError:
         pass
+
+
+def migrate_model(*args):
+    """
+    Scan Modelica model files for known compatibility issues with pymoca >= 0.11
+    and report (or fix) them.
+
+    Usage:
+        rtc-tools-migrate-model <model_folder> [--fix]
+
+    Checks performed:
+      - Use of deprecated 'SI.*' shorthand (replaced by 'Modelica.Units.SI.*' in pymoca >= 0.10)
+      - References to Modelica Standard Library packages not yet in rtc-tools-standard-library
+
+    With --fix, safe automatic rewrites (SI shorthand) are applied in-place.
+    """
+    import re
+
+    if not args:
+        args = sys.argv[1:]
+
+    fix_mode = "--fix" in args
+    paths = [a for a in args if not a.startswith("--")]
+
+    if not paths:
+        print("Usage: rtc-tools-migrate-model <model_folder> [--fix]")
+        sys.exit(1)
+
+    model_folder = Path(paths[0])
+    if not model_folder.exists():
+        sys.exit(f"Folder '{model_folder}' does not exist.")
+
+    mo_files = list(model_folder.rglob("*.mo"))
+    if not mo_files:
+        sys.exit(f"No .mo files found in '{model_folder}'.")
+
+    # MSL packages currently covered by rtc-tools-standard-library
+    _SUPPORTED = {"Modelica.Units"}
+
+    # Patterns
+    _si_re = re.compile(r"\bSI\.([A-Za-z]\w*)")
+    _msl_re = re.compile(r"\b(Modelica\.[A-Za-z][A-Za-z0-9_.]*)")
+
+    print(f"Scanning {len(mo_files)} file(s) in '{model_folder}'...\n")
+    any_issues = False
+
+    for mo_file in sorted(mo_files):
+        content = mo_file.read_text(encoding="utf-8")
+        issues = []
+        new_content = content
+
+        # Check 1: deprecated SI.* shorthand
+        if _si_re.search(content):
+            example = _si_re.search(content).group(0)
+            issues.append(
+                f"  - Uses deprecated '{example}' shorthand. "
+                f"Replace with 'Modelica.Units.SI.*' (pymoca >= 0.10 no longer treats 'SI' as a builtin)."
+            )
+            if fix_mode:
+                new_content = _si_re.sub(r"Modelica.Units.SI.\1", new_content)
+
+        # Check 2: MSL packages not covered by rtc-tools-standard-library
+        used_pkgs = {".".join(m.split(".")[:2]) for m in _msl_re.findall(content)}
+        missing_pkgs = sorted(used_pkgs - _SUPPORTED)
+        for pkg in missing_pkgs:
+            issues.append(
+                f"  - References '{pkg}', which is not yet in rtc-tools-standard-library."
+            )
+
+        if issues:
+            any_issues = True
+            rel = mo_file.relative_to(model_folder)
+            print(f"{rel}:")
+            for issue in issues:
+                print(issue)
+            print()
+
+        if fix_mode and new_content != content:
+            mo_file.write_text(new_content, encoding="utf-8")
+            print(f"  [fixed] {mo_file.name}\n")
+
+    if not any_issues:
+        print("No compatibility issues found.")
+    elif not fix_mode:
+        print(
+            "Run with '--fix' to automatically apply safe rewrites (SI shorthand substitution).\n"
+            "For missing MSL packages, contribute to: "
+            "https://github.com/rtc-tools/rtc-tools-standard-library"
+        )
