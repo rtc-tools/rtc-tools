@@ -1309,16 +1309,16 @@ wheels = [
 
 [[package]]
 name = "pymoca"
-version = "0.9.2"
+version = "0.11.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "antlr4-python3-runtime" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/da/2abf5d074b6e69c190aac8fd6d2f732b2fcba0b73229776a18d4cace074f/pymoca-0.9.2.tar.gz", hash = "sha256:bb0f1368e67f7bb876c3cb3a468e4d3a87a28e7624adb7483b39a22274b730e0", size = 111886, upload-time = "2025-01-28T15:44:25.037Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/f3/04e097011b86e001c14075aac6bd3b4d3044fa432713ce2770de0c34eb44/pymoca-0.11.2.tar.gz", hash = "sha256:1351a7b421559dc15f9fbc63517d3bb9cf64aecb3499168e6ecc14275bdb77fe", size = 122156, upload-time = "2026-03-12T18:09:45.65Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/55/ecf41c62849b27684431f096872216427d6190dec2ee8d2c2550669d7395/pymoca-0.9.2-py3-none-any.whl", hash = "sha256:13b96bd877def818fba22f43b1b3916470b573e569c7e7f1bd98a8990b9b60d3", size = 113709, upload-time = "2025-01-28T15:44:22.626Z" },
+    { url = "https://files.pythonhosted.org/packages/22/f0/c41e075401101f22b7304918c626d8edd7c63b0180976ae45924d0f88b2f/pymoca-0.11.2-py3-none-any.whl", hash = "sha256:63135a3fdadcb7eeb29f93774dcec0656a378358e66950bdb3714fa39547fe0a", size = 124302, upload-time = "2026-03-12T18:09:44.627Z" },
 ]
 
 [[package]]
@@ -1497,6 +1497,7 @@ dependencies = [
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pymoca" },
     { name = "rtc-tools-channel-flow" },
+    { name = "rtc-tools-standard-library" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
@@ -1551,8 +1552,9 @@ requires-dist = [
     { name = "netcdf4", marker = "extra == 'all'" },
     { name = "netcdf4", marker = "extra == 'netcdf'" },
     { name = "numpy", specifier = ">=1.21.2" },
-    { name = "pymoca", specifier = "==0.9.*,>=0.9.1" },
+    { name = "pymoca", specifier = "==0.11.*" },
     { name = "rtc-tools-channel-flow", specifier = ">=1.2.0" },
+    { name = "rtc-tools-standard-library", specifier = ">=0.1.2" },
     { name = "scipy", specifier = ">=1.7.2" },
 ]
 provides-extras = ["all", "netcdf"]
@@ -1598,6 +1600,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/35/d4/6fedf1e9c778972e695f45b9cac11570608581b760b601119fafa00a04f6/rtc-tools-channel-flow-1.2.0.tar.gz", hash = "sha256:9d9054e0f3208bc6f29f587a1ad35837dfd304b6e851c1017fa06575ba915649", size = 37889, upload-time = "2024-07-02T11:46:09.694Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/fe/81a3bfe57d1e6f0d1ee67dd1598c3d2258bbd9f2dbdb8f1b3a59584d8960/rtc_tools_channel_flow-1.2.0-py3-none-any.whl", hash = "sha256:fea9d9d41bfecd446965b5ab429c6d7ed3fe45f464cd50156b85f1bc037a2995", size = 63585, upload-time = "2024-07-02T11:46:08.071Z" },
+]
+
+[[package]]
+name = "rtc-tools-standard-library"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/a2/5194492b1ae77746af75fde362ddf742f24c3ef503a97d48db34ecc7660a/rtc_tools_standard_library-0.1.2.tar.gz", hash = "sha256:90d92b9afc8224cc12b0eae4a04f2e4176c5dc4517679dcc622610f9a83d0362", size = 19278, upload-time = "2026-03-18T10:26:48.607Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/20/947517cb983eaf82d594fc08c41e91b38f729d718bc81b09d47339215838/rtc_tools_standard_library-0.1.2-py3-none-any.whl", hash = "sha256:d6fae6b68e7728382b247fd71352e50edbfa7c4d587b94b9d197c024b2738ae5", size = 20201, upload-time = "2026-03-18T10:26:47.598Z" },
 ]
 
 [[package]]
