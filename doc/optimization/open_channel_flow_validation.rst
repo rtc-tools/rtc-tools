@@ -1,9 +1,11 @@
-Validation of Current Homotopy Example Model
+Validation of current Homotopy Example Model
 ============================================
 
-This document compares the current implementation of homotopy with the full
-high‑resolution non‑linear solution of the SV Equations. For the comparison,
-the simple example available in RTC‑Tools is used.
+This section compares the current implementation of the homotopy approach (also referred to as continuation mehtod) for the full high-resolution non-linear solution of the Saint-Venant Equations with a reference solution. The test case :ref:`channel_pulse` is solved with the homotopy method and the results are compared with the solution obtained with a corresponding model built with the SOBEK hydraulic modelling suite. 
+
+-------------------------
+Model 
+-------------------------
 
 The channel data is the following::
 
@@ -14,17 +16,22 @@ The channel data is the following::
     length = 10000
     width = 30
 
-The test case is the same presented in :ref:`channel_pulse`: an upstream and
-downstream wave of 150 m³/s is given and the water levels are compared.
+As boundary conditions, an upstream and downstream wave of 150 m³/s is set. The corresponding water levels are compared.
 
-Four homotopy scenarios are evaluated against the SOBEK model, combining full (10‑node) and sparse (2‑node, typically used operationally) spatial discretizations with different linearization starting points, where the solution begins at :math:\theta = 0. Because the full non‑linear equation is solved, the choice of the second linearization point should, in principle, have no influence on the final solution. Thus the four cases:
+To analyze the effect of the spatial discretization and the nominal value for the water level, four variants of the homotopy model are evaluated. Two different spatial discretization settings, the full (10-node) and the sparse (2-node, typically used operationally), are each combined with a different nominal value for the water level:
 
-- 10 nodes, nominal level 3 m  
-- 10 nodes, nominal level 4 m  
-- 2 nodes, nominal level 3 m  
-- 2 nodes, nominal level 4 m  
+- 10 nodes, nominal value for water level 3 m  
+- 10 nodes, nominal value for water level 4 m  
+- 2 nodes, nominal value for water level 3 m  
+- 2 nodes, nominal value for water level 4 m  
 
-The downstream and upstream water levels are shown in the following figures.
+The homotopy procedure starts with :math:`\theta = 0`, which is the full linear simplification. The value :math:`\theta` is increased gradually with default step size for :math:`\theta` towards the full non-linear formulation of the Saint-Venant equations. 
+
+-------------------------
+Results
+-------------------------
+
+The water level time series for the downstream end and for the upstream end of the channel are shown in the following figures.
 
    
 .. _Upstream_150:
@@ -43,15 +50,16 @@ Analysis
 -------------------------
 
 
-The upstream levels are represented well with good discretization. Sobek
-calculates a 0.59 m water level change, while well‑discretized homotopy
-calculates 0.60 m water level change. The sparse‑discretized homotopy
-calculates 0.94 m. This shows the very **strong influence of the discretization**.
+The full discretization with 10 nodes represents the water level well. SOBEK
+calculates a 0.59 m water level change due to the wave inflow, while the homotopy model with 10 node discretization
+calculates the water level change to 0.60 m. 
 
-The different **linear starting point has negligible influence** when using two
-discretization points, and only a slight influence when using 10 points. 
-Downstream we see similar results. There is no influence of the starting point
-of the discretization.
+The water level results from the homotopy model with the sparse discretization match the SOBEK solution less well. The water level change is 0.94 m. This shows the **strong influence of the spatial discretization**.
+
+For the downstream end of the channel, the results from the homotopy model with full discretization match the reference solution obtained with SOBEK better than the sparse discretization. However, the results still differ here more than in the upstream end of the channel. 
+
+The different **nominal value** has **negligible influence** when using two
+discretization points, and only a little influence when using 10 points. 
 
 .. note::
 
@@ -65,7 +73,7 @@ of the discretization.
 Summary
 -------------------------
 
-The model is highly sensitive to spatial discretization, so it is important to consider 
+The model shows high sensitivity to the spatial discretization, so it is important to consider 
 the effects that discretization may have on the results.
-The model is also sensitive to the choice of the linearization starting point, 
-especially when it needs to compute large changes in discharge. The initial steady-state solution often differs from that of SOBEK and depends on the point at which the linearization begins.
+The model is also sensitive to the choice of the nominal value for the unknown, 
+especially when it shows large variations. 
