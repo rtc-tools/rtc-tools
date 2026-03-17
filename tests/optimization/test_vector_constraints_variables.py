@@ -775,6 +775,26 @@ class InvalidVectorConstraintUbg(ModelAdditionalVariablesVector):
         return constraints
 
 
+class ModelScalarConstraints(Model):
+    def constraints(self, ensemble_member):
+        return [(1.0, 1.0, 1.0)]
+
+
+class ModelNumpyScalarConstraints(Model):
+    def constraints(self, ensemble_member):
+        return [(np.float64(0.5), 0.0, 1.0)]
+
+
+class TestScalarConstraints(TestCase):
+    def test_python_scalar_constraint_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            ModelScalarConstraints().transcribe()
+
+    def test_numpy_scalar_constraint_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            ModelNumpyScalarConstraints().transcribe()
+
+
 class TestInvalidVectorConstraints(TestCase):
     def test_vector_constraint_lbg(self):
         self.problem = InvalidVectorConstraintLbg()
