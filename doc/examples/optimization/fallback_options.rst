@@ -20,22 +20,11 @@ Implementing a Basic Fallback Option
 A fallback option to fall back to a different solver if the previous one failed,
 can be implemented in the following way:
 
-* Add a ``solver`` attribute to your ``OptimizationProblem`` class
-  to keep track of the solver that is used.
 * Overwrite the ``optimize`` method of your optimization problem class,
   to loop over a list of solvers until one of them succeeds.
+  The ``solver`` attribute is set at the start of each iteration.
 * Overwrite the ``solver_options`` method of your optimization problem class,
   to select the correct solver options for the current ``solver``.
-
-To add a ``solver`` attribute, we can overwrite the ``__init__`` method
-of our optimization problem class:
-
-.. literalinclude:: ../../../examples/fallback_option/src/example.py
-  :language: python
-  :pyobject: Example.__init__
-  :lineno-match:
-
-Here, we set the ``solver`` attribute initially to ``None``.
 
 To iterate over a list of solvers, we can overwrite the ``optimize`` method:
 
@@ -45,16 +34,16 @@ To iterate over a list of solvers, we can overwrite the ``optimize`` method:
   :lineno-match:
 
 Here, we iterate over the solvers `ipopt` and `highs`.
+The ``solver`` attribute is set at the start of each iteration.
 In case the solver succeeds, we break out of the loop.
 
-To select the correct solver options, we overwrite the ``solver_options`` method:
+To select the correct solver options based on the selected solver,
+we overwrite the ``solver_options`` method:
 
 .. literalinclude:: ../../../examples/fallback_option/src/example.py
   :language: python
   :pyobject: Example.solver_options
   :lineno-match:
-
-Here, the correct solver options are chosen based on the selected solver.
 
 The script of the entire example is as follows:
 
