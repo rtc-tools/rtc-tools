@@ -1,5 +1,24 @@
+"""Build LP/MILP file representations from CasADi symbolic expressions.
+
+Provides low-level builders (objective, constraints, bounds) and a file writer.
+Called by CollocatedIntegratedOptimizationProblem when ``export_lp=True`` is set
+in ``solver_options()``.
+
+The LP file is currently used for diagnostics/export only. Using it as a solve path —
+by passing the problem as an in-memory data structure directly to the solver (bypassing
+CasADi's solver interface) — would unlock solver-native capabilities such as hierarchical
+multi-objective optimization (goal programming) and lazy constraints with separation oracle
+callbacks.
+
+LP format sections not currently implemented here include: Lazy Constraints, User Cuts,
+SOS (type 1 and 2), Semi-continuous/Semi-integer, PWLObj, General Constraints
+(MIN/MAX/ABS/OR/AND/NORM/PWL), Scenarios, and Multi-objective.
+See https://docs.gurobi.com/projects/optimizer/en/current/reference/fileformats/modelformats.html#lp-format
+"""
+
 import logging
 import os
+import re
 import textwrap
 
 import casadi as ca
@@ -11,24 +30,164 @@ LP_MAX_LINE_WIDTH = 255
 # Threshold for treating coefficients and constants as zero (absorbs floating-point noise)
 LP_COEFF_EPSILON = 1e-10
 
+# Characters forbidden in LP constraint/variable names (LP format requirement)
+_LP_FORBIDDEN_CHARS = " \t\r\n#+-*/^()[]:'\""
+_LP_FORBIDDEN_TRANS = str.maketrans(_LP_FORBIDDEN_CHARS, "_" * len(_LP_FORBIDDEN_CHARS))
+
+# Suffixes appended to the two lines emitted for range constraints.
+_LP_RANGE_SUFFIXES = ("_lb", "_ub")
+
+# Prefix for dummy variables used when a constraint reduces to a constant expression.
+# LP format requires at least one variable term per row; we emit e.g. ``b_i _constant_<name> >= lb``
+# with ``_constant_<name>`` fixed to 1 in Bounds, preserving infeasibility detectability.
+_LP_CONSTANT_VAR_PREFIX = "_constant_"
+
+# Reserved suffix patterns appended by the LP naming scheme after base names are fixed.
+# A user name ending with any of these patterns would produce ambiguous or colliding labels:
+#   _d{n}  — deduplication index        e.g. foo_d0, foo_d1
+#   _m{n}  — ensemble member suffix     e.g. foo_m0, foo_m1
+#   _t{n}  — time-step suffix           e.g. foo_t0, foo_t1
+#   _lb / _ub — range-constraint sides  e.g. foo_lb, foo_ub
+_LP_RESERVED_SUFFIX_RE = re.compile(r"(_d\d+|_m\d+|_t\d+|_lb|_ub)$")
+
+# Prefixes reserved for auto-generated constraint names in LP export.
+# User-provided names that start with these prefixes may cause confusion.
+LP_RESERVED_NAME_PREFIXES = (
+    "initial_residual_",
+    "initial_derivative_",
+    "collocation_",
+    "delay_",
+    "constraint_",
+    "path_constraint_",
+    "single_pass_objective_",
+)
+
 logger = logging.getLogger("rtctools")
 
-# Note: the LP file is currently used for diagnostics/export only. Using it as a
-# solve path — by passing the problem as an in-memory data structure directly to
-# the solver (bypassing CasADi's solver interface) — would unlock solver-native
-# capabilities such as hierarchical multi-objective optimization (goal programming)
-# and lazy constraints with separation oracle callbacks.
 
-# The LP format supports several sections not currently implemented here:
-#   - Lazy Constraints: hints to the solver that constraints can be added lazily
-#   - User Cuts: cutting planes supplied by the user
-#   - SOS: special ordered sets (type 1 and 2)
-#   - Semi-continuous / Semi-integer: variables that are either zero or within a range
-#   - PWLObj: piecewise-linear objective functions
-#   - General Constraints: MIN, MAX, ABS, OR, AND, NORM, PWL function constraints
-#   - Scenarios: multiple scenario data (objective/constraint/bound changes per scenario)
-#   - Multi-objective: weighted/hierarchical objective sections
-# See https://docs.gurobi.com/projects/optimizer/en/current/reference/fileformats/modelformats.html#lp-format
+def _sanitize_constraint_name(name: str) -> str:
+    """Sanitize a constraint name for LP format compatibility.
+
+    Replaces characters that are forbidden in LP constraint names with underscores.
+    """
+    return name.translate(_LP_FORBIDDEN_TRANS)
+
+
+def _deduplicate_constraint_names(constraint_names: list[str]) -> list[str]:
+    """Deduplicate a constraint name list in-place and return it.
+
+    Returns immediately when all names are unique (fast path). When a name appears
+    more than once, ``_d0``, ``_d1``, … suffixes are appended to each occurrence,
+    skipping any suffix that already exists as a distinct name. The first occurrence
+    is renamed retroactively. Overall complexity is O(n).
+
+    A duplicate in a reserved internal-name prefix is a bug; a warning is emitted
+    so it surfaces clearly.
+    """
+    name_set = set(constraint_names)
+    if len(name_set) == len(constraint_names):
+        return constraint_names  # all unique, nothing to do
+    # Two structures, two responsibilities:
+    #   name_set  — all current names in the list; answers "is this candidate taken?"
+    #   seen      — per base name: (next_counter, first_occurrence_index); lets the
+    #               first occurrence be renamed retroactively without a second O(n) scan.
+    seen: dict[str, tuple[int, int]] = {}
+    for i, name in enumerate(constraint_names):
+        if name in seen:
+            if any(name.startswith(p) for p in LP_RESERVED_NAME_PREFIXES):
+                logger.warning(
+                    "Internal constraint name %r appears more than once; "
+                    "this indicates a bug in constraint name generation.",
+                    name,
+                )
+            counter, first_idx = seen[name]
+            if first_idx is not None:
+                # Rename the first occurrence retroactively.
+                while f"{name}_d{counter}" in name_set:
+                    counter += 1
+                constraint_names[first_idx] = f"{name}_d{counter}"
+                name_set.discard(name)
+                name_set.add(constraint_names[first_idx])
+                counter += 1
+                seen[name] = (counter, None)  # first occurrence already renamed
+            while f"{name}_d{counter}" in name_set:
+                counter += 1
+            constraint_names[i] = f"{name}_d{counter}"
+            name_set.add(constraint_names[i])
+            seen[name] = (counter + 1, None)
+        else:
+            seen[name] = (0, i)
+    return constraint_names
+
+
+def _build_user_constraint_base_names(user_tuples: list, auto_prefix: str) -> list[str]:
+    """Sanitize, validate and deduplicate user-provided constraint base names.
+
+    Extracts the optional name from position 3 of each constraint tuple, falling back
+    to ``"{auto_prefix}_{i}"`` when absent. Each name is sanitized (forbidden characters
+    replaced with ``_``), validated against reserved prefixes, and renamed with a ``_ren``
+    suffix if it ends with a reserved LP suffix (``_d{n}``, ``_m{n}``, ``_t{n}``, ``_lb``,
+    ``_ub``). The resulting base names are then deduplicated with ``_d{n}`` indices. Must
+    be called before time-index or ensemble-member suffixes are appended.
+
+    Args:
+        user_tuples: List of constraint tuples ``(expr, lb, ub[, name])``.
+        auto_prefix: Prefix used for auto-generated names (e.g. ``"constraint"`` or
+            ``"path_constraint"``).
+
+    Returns:
+        List of deduplicated base names, one per tuple.
+    """
+    base_names = []
+    for i, c in enumerate(user_tuples):
+        if len(c) > 3 and c[3]:
+            raw = c[3]
+            name = _sanitize_constraint_name(raw)
+            _validate_lp_constraint_name(name)
+            if _LP_RESERVED_SUFFIX_RE.search(raw) or _LP_RESERVED_SUFFIX_RE.search(name):
+                new_name = name + "_ren"
+                logger.warning(
+                    "User constraint name %r ends with a reserved LP suffix (_d{n}, _m{n}, "
+                    "_t{n}, _lb, _ub); renamed to %r to avoid collision with auto-generated "
+                    "labels.",
+                    raw,
+                    new_name,
+                )
+                name = new_name
+        else:
+            name = f"{auto_prefix}_{i}"
+        base_names.append(name)
+    _deduplicate_constraint_names(base_names)
+    return base_names
+
+
+def _validate_lp_constraint_name(name: str) -> None:
+    """Validate a user-provided LP constraint name.
+
+    Emits a warning when the name starts with a prefix reserved for auto-generated
+    constraint names, as this may cause confusion in LP output.
+
+    Reserved-suffix detection (``_d{n}``, ``_m{n}``, ``_t{n}``, ``_lb``, ``_ub``) is
+    handled separately in :func:`_build_user_constraint_base_names`, which also renames
+    the offending name, so it is not repeated here.
+    """
+    if any(name.startswith(p) for p in LP_RESERVED_NAME_PREFIXES):
+        logger.warning(
+            "User-provided constraint name %r starts with a prefix reserved for "
+            "auto-generated LP constraint names; this may cause confusion in LP output.",
+            name,
+        )
+
+
+def _check_nan_bounds(lb: np.ndarray, ub: np.ndarray, names: list[str]) -> None:
+    """Raise ValueError if any lower or upper bound is NaN, listing the affected names."""
+    nan_bounds_list = [f"{names[i]} (lower)" for i in np.where(np.isnan(lb))[0]] + [
+        f"{names[i]} (upper)" for i in np.where(np.isnan(ub))[0]
+    ]
+    if nan_bounds_list:
+        raise ValueError(
+            f"NaN bounds found for {nan_bounds_list}; check that all bounds are finite or ±inf."
+        )
 
 
 def _format_lp_bound(val: float) -> str:
@@ -107,27 +266,38 @@ def _build_constraints(
     lbg: list,
     ubg: list,
     var_names: list[str],
-) -> str:
+    constraint_names: list[str] | None = None,
+) -> tuple[str, str]:
     """
     Build the LP constraints string.
 
-    Each constraint row ``g[i]`` is written as one or two inequality/equality
-    lines depending on its bounds.  Range constraints (finite lb and ub, lb != ub)
-    are split into two separate inequalities; the LP ``Ranges`` section is not used.
+    Note: Constraints are not wrapped and may exceed the LP format 255-character
+    line limit if they contain many variables. Consider using shorter variable names
+    for very large problems.
 
-    Note: constraint lines are not wrapped and may exceed the LP format 255-character
-    line limit for problems with many variables. Use shorter variable names if needed.
+    When a constraint reduces to a constant (no variable terms), feasible rows are
+    skipped silently. Infeasible ones are represented via a dummy variable
+    ``_constant_<name>`` fixed to 1 in Bounds, so solvers can detect the infeasibility
+    during presolve. Constraints with both bounds infinite are skipped with a warning
+    as they likely indicate a formulation error.
 
     Args:
-        g: Symbolic constraint vector (affine in x).
-        x: Decision variable vector (length must match var_names).
-        lbg: Lower bounds on each constraint row (``-inf`` for one-sided upper bounds).
-        ubg: Upper bounds on each constraint row (``+inf`` for one-sided lower bounds).
-        var_names: Human-readable name for each element of x.
+        g: Symbolic constraint expression (affine in x).
+        x: Decision variable vector.
+        lbg: Lower bounds on constraints.
+        ubg: Upper bounds on constraints.
+        var_names: List of variable names.
+        constraint_names: Optional list of constraint names. When provided, each
+            constraint is prefixed as ``name: expr op rhs``. Range constraints
+            emit two lines with ``_lb`` / ``_ub`` appended. Names are sanitized, guarded
+            against range-suffix collisions, and deduplicated before expansion.
+            If ``None``, constraints are written without labels.
 
     Returns:
-        Indented constraints string ready to follow the ``Subject To`` header
-        in an LP file.
+        Tuple of (constraints_str, extra_bounds_str) where constraints_str is the
+        formatted Subject To section content, and extra_bounds_str contains any
+        dummy variable bound lines that must be appended to the Bounds section
+        (empty string when no constant rows were encountered).
     """
     A, b = ca.linear_coeff(g, x)
     A = ca.sparsify(ca.DM(A))
@@ -135,6 +305,12 @@ def _build_constraints(
 
     lbg = np.array(ca.veccat(*lbg))[:, 0]
     ubg = np.array(ca.veccat(*ubg))[:, 0]
+
+    constraint_labels = (
+        constraint_names if constraint_names is not None else [str(i) for i in range(len(lbg))]
+    )
+    _check_nan_bounds(lbg, ubg, constraint_labels)
+
     A_csc = A.tocsc()
     A_coo = A_csc.tocoo()
     b = np.array(b)[:, 0]
@@ -144,7 +320,45 @@ def _build_constraints(
         if abs(c) > LP_COEFF_EPSILON:
             constraints[i].extend(["+" if c > 0 else "-", f"{abs(c):.15g}", var_names[j]])
 
+    # Sanitize constraint names once upfront.
+    # Callers are expected to have already sanitized, validated reserved suffixes, and
+    # deduplicated names (e.g. via _build_user_constraint_base_names). The sanitization
+    # here is a safety net for direct callers (e.g. unit tests).
+    if constraint_names is not None:
+        sanitized_names = []
+        for raw in constraint_names:
+            sanitized = _sanitize_constraint_name(raw)
+            if sanitized != raw:
+                invalid_chars = sorted({c for c in raw if c in _LP_FORBIDDEN_CHARS})
+                logger.debug(
+                    "Constraint name %r contains forbidden characters %r; sanitized to %r.",
+                    raw,
+                    invalid_chars,
+                    sanitized,
+                )
+            sanitized_names.append(sanitized)
+    else:
+        sanitized_names = None
+
+    def _prefix(name: str, lb: float, ub: float, side: str) -> str:
+        """Return the label prefix for one emitted line, or '' when names are disabled.
+
+        ``side`` is ``"eq"``, ``"lb"``, or ``"ub"``.  For equality and single-sided
+        constraints the name is used as-is; for range constraints (both bounds finite)
+        the appropriate ``_lb`` / ``_ub`` suffix is appended.
+        """
+        if sanitized_names is None:
+            return ""
+        is_range = lb > -np.inf and ub < np.inf and not (np.isfinite(lb) and lb == ub)
+        if is_range:
+            suffix = _LP_RANGE_SUFFIXES[0] if side == "lb" else _LP_RANGE_SUFFIXES[1]
+            label = f"{name}{suffix}" if name else ""
+        else:
+            label = name
+        return f"{label}: " if label else ""
+
     constraints_str_list = []
+    extra_bounds_list = []  # dummy variable bound lines for constant rows
     for i, cur_constr in enumerate(constraints):
         lb, ub, b_i = lbg[i], ubg[i], b[i]
         if cur_constr:
@@ -153,34 +367,74 @@ def _build_constraints(
             cur_constr.pop(0)
         c_str = " ".join(cur_constr)
 
-        # If no variable terms exist, this is a constant constraint (0 on LHS)
-        if not c_str:
-            c_str = "0"
+        name = sanitized_names[i] if sanitized_names is not None else ""
 
-        if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
-            constraint_line = f"{c_str} = {lb - b_i:.15g}"
-        elif np.isfinite(lb) and np.isfinite(ub):
-            # Range constraint: lb <= expr <= ub. We do not use the LP ``Ranges``
-            # section; we express this as two separate inequalities instead.
-            constraints_str_list.append(f"{c_str} >= {lb - b_i:.15g}")
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
-        elif np.isfinite(lb):
-            constraint_line = f"{c_str} >= {lb - b_i:.15g}"
-        elif np.isfinite(ub):
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
-        else:
+        if not c_str:
+            # All variable coefficients are below epsilon: the expression is a constant b_i.
+            # LP format requires at least one variable term per row. Feasible constant rows
+            # (lb <= b_i <= ub) are skipped silently. Infeasible ones are represented via a
+            # dummy variable fixed to 1, so the solver can detect the infeasibility via presolve.
+            lb_ok = (not np.isfinite(lb)) or b_i >= lb - LP_COEFF_EPSILON
+            ub_ok = (not np.isfinite(ub)) or b_i <= ub + LP_COEFF_EPSILON
+            if lb_ok and ub_ok:
+                continue
+            # Infeasible — warn and emit using a dummy variable named after the constraint.
+            # We use coefficient 1 and move b_i to the RHS (lb - b_i, ub - b_i), matching
+            # the normal-row convention and avoiding a zero-coefficient term when b_i == 0.
+            label = constraint_labels[i]
             logger.warning(
-                "Constraint %d has no finite bound (lbg=%s, ubg=%s, b_i=%s). "
-                "Writing as '<= +Inf' for debugging; this constraint is vacuous.",
+                "Constraint %r reduces to a constant (%s) that violates bounds [%s, %s]. "
+                "The problem is infeasible. Representing via dummy variable in LP export.",
+                label,
+                b_i,
+                lb,
+                ub,
+            )
+            dummy_var = _sanitize_constraint_name(f"{_LP_CONSTANT_VAR_PREFIX}{label}")
+            extra_bounds_list.append(f"1 <= {dummy_var} <= 1")
+            if np.isfinite(lb) and lb == ub:
+                constraints_str_list.append(
+                    f"{_prefix(name, lb, ub, 'eq')}{dummy_var} = {_format_lp_bound(lb - b_i)}"
+                )
+            else:
+                if lb > -np.inf:
+                    constraints_str_list.append(
+                        f"{_prefix(name, lb, ub, 'lb')}{dummy_var} >= {_format_lp_bound(lb - b_i)}"
+                    )
+                if ub < np.inf:
+                    constraints_str_list.append(
+                        f"{_prefix(name, lb, ub, 'ub')}{dummy_var} <= {_format_lp_bound(ub - b_i)}"
+                    )
+            continue
+
+        if not np.isfinite(lb) and not np.isfinite(ub):
+            # Both bounds infinite: vacuous constraint, carries no information.
+            # Skip but warn — this likely indicates a formulation error.
+            logger.warning(
+                "Constraint %d has no finite bound (lbg=%s, ubg=%s); skipping in LP export.",
                 i,
                 lb,
                 ub,
-                b_i,
             )
-            constraint_line = f"{c_str} <= {_format_lp_bound(ub)}"
-        constraints_str_list.append(constraint_line)
+            continue
+
+        if np.isfinite(lb) and lb == ub:  # Equality constraint: emit a single = line.
+            constraints_str_list.append(
+                f"{_prefix(name, lb, ub, 'eq')}{c_str} = {_format_lp_bound(lb - b_i)}"
+            )
+        else:
+            if lb > -np.inf:
+                constraints_str_list.append(
+                    f"{_prefix(name, lb, ub, 'lb')}{c_str} >= {_format_lp_bound(lb - b_i)}"
+                )
+            if ub < np.inf:
+                constraints_str_list.append(
+                    f"{_prefix(name, lb, ub, 'ub')}{c_str} <= {_format_lp_bound(ub - b_i)}"
+                )
+
     constraints_str = "  " + "\n  ".join(constraints_str_list)
-    return constraints_str
+    extra_bounds_str = "\n  ".join(extra_bounds_list)
+    return constraints_str, ("  " + extra_bounds_str if extra_bounds_str else "")
 
 
 def _build_bounds(
@@ -210,6 +464,8 @@ def _build_bounds(
         ``binary_vars`` is the list of binary (0/1) variable names, and
         ``general_vars`` is the list of general integer variable names.
     """
+    _check_nan_bounds(np.asarray(lbx, dtype=float), np.asarray(ubx, dtype=float), var_names)
+
     bounds_list = []
     binary_vars = []
     general_vars = []
