@@ -835,6 +835,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         "and trouble finding a feasible initial solution."
                     )
 
+            # Store the DAE-derived linearity value so _export_lp_file can check it
+            # independently of transient overrides (e.g. SinglePassGoalProgrammingMixin
+            # sets linear_collocation=False to disable jac_c_constant for IPOPT, which
+            # must not prevent LP export of a problem with a linear DAE).
+            self._dae_linear_collocation = self.linear_collocation
+
             # Transcribe DAE using theta method collocation
             if self.integrate_states:
                 I = ca.MX.sym("I", len(integrated_variables))  # noqa: E741
@@ -2064,6 +2070,18 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
     @property
     def solver_input(self):
         return self.__solver_input
+
+    @property
+    def _collint_variable_indices(self) -> list[dict]:
+        """Variable name to index mapping (raw: int, slice, or ndarray) for each ensemble member.
+        Consumed by result extraction (extract_controls, extract_states) and LP export."""
+        return list(self.__indices)
+
+    @property
+    def _collint_variable_indices_as_lists(self) -> list[dict]:
+        """Variable name to index mapping (normalized to list[int]) for each ensemble member.
+        Consumed by LP export; avoids re-normalizing the raw int/slice/ndarray values."""
+        return list(self.__indices_as_lists)
 
     def solver_options(self):
         options = super().solver_options()

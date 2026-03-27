@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABCMeta, abstractmethod, abstractproperty
 from typing import Any, Literal, overload
 
@@ -6,6 +7,14 @@ import casadi as ca
 import numpy as np
 
 from rtctools._internal.alias_tools import AliasDict
+from rtctools._internal.casadi_helpers import is_affine
+from rtctools._internal.casadi_to_lp import (
+    build_bounds,
+    build_constraints,
+    build_objective,
+    sanitize_var_names,
+    write_lp_file,
+)
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
 from rtctools.data.storage import DataStoreAccessor
@@ -101,19 +110,24 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         logger.debug("Creating solver")
 
-        if options.pop("expand", False):
+        expand = options.pop("expand", False)
+        export_lp = options.pop("export_lp", False)
+        if expand or export_lp:
             # NOTE: CasADi only supports the "expand" option for nlpsol. To
             # also be able to expand with e.g. qpsol, we do the expansion
-            # ourselves here.
+            # ourselves here. Expansion is also required for LP export.
             logger.debug("Expanding objective and constraints to SX")
 
             expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
-            X_sx = ca.SX.sym("X", *nlp["x"].shape)
-            f_sx, g_sx = expand_f_g(X_sx)
+            x_sx = ca.SX.sym("x", *nlp["x"].shape)
+            f_sx, g_sx = expand_f_g(x_sx)
 
             nlp["f"] = f_sx
             nlp["g"] = g_sx
-            nlp["x"] = X_sx
+            nlp["x"] = x_sx
+
+            if export_lp:
+                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete)
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -222,6 +236,97 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         return success
 
+    def _export_lp_file(
+        self,
+        f: ca.SX,
+        g: ca.SX,
+        x: ca.SX,
+        lbg: list,
+        ubg: list,
+        lbx: list,
+        ubx: list,
+        discrete: list[bool],
+    ) -> None:
+        """Export the transcribed LP/MILP problem as a file.
+
+        Called by optimize() when export_lp=True. Validates that the problem
+        is compatible with LP/MILP export (affine objective and constraints),
+        builds the LP file representation, and writes it to the output folder.
+        Problems with discrete variables are exported as MILP (with a General
+        section listing integer variables). For ensemble problems, the single
+        combined LP/MILP is exported with per-member suffixes on state variables.
+
+        Args:
+            f: Symbolic objective expression (already expanded to SX).
+            g: Symbolic constraint expression (already expanded to SX).
+            x: Decision variable vector.
+            lbg, ubg: Lower/upper bounds on constraints.
+            lbx, ubx: Lower/upper bounds on variables.
+            discrete: Boolean array indicating discrete variables.
+
+        Raises:
+            ValueError: If the problem does not inherit from
+                CollocatedIntegratedOptimizationProblem, or has a non-affine
+                objective or constraints.
+        """
+        # hasattr duck-typing guard: importing CIOP here would create a circular dependency
+        # (optimization_problem → collocated_integrated_optimization_problem
+        #  → optimization_problem).
+        if not hasattr(self, "_collint_variable_indices_as_lists"):
+            raise ValueError(
+                "LP/MILP export is only supported for "
+                "CollocatedIntegratedOptimizationProblem subclasses."
+            )
+
+        if (
+            getattr(self, "_dae_linear_collocation", getattr(self, "linear_collocation", None))
+            is False
+        ):
+            raise ValueError(
+                "LP/MILP export is not supported for problems with "
+                "non-linear Modelica DAE equations."
+            )
+
+        if not is_affine(f, x):
+            raise ValueError(
+                "LP/MILP export requires the objective function to be affine in the "
+                "decision variables, but the objective is non-linear."
+            )
+
+        if not is_affine(g, x):
+            raise ValueError(
+                "LP/MILP export requires all constraints to be affine in the "
+                "decision variables, but some constraints are non-linear."
+            )
+
+        # _collint_variable_indices is guaranteed to be populated here: transcribe() (called
+        # in optimize()) sets it before returning. The combined decision vector covers
+        # all ensemble members; shared variables (controls) get no member suffix while
+        # per-member variables (states) are suffixed with _m{i}.
+        var_names = sanitize_var_names(
+            self._collint_variable_indices_as_lists,
+            x.shape[0],
+        )
+        obj_str = build_objective(f, x, var_names)
+        constr_str = build_constraints(g, x, lbg, ubg, var_names)
+        bounds_str, binary_vars, general_vars = build_bounds(var_names, lbx, ubx, discrete)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        p = getattr(self, "_gp_current_priority", None)
+        n = getattr(self, "_gp_n_priorities", 0)
+        priority_suffix = f"_priority_{p}" if p is not None and n > 1 else ""
+        filename = f"{self.__class__.__name__}_{timestamp}{priority_suffix}.lp"
+
+        write_lp_file(
+            filename,
+            obj_str,
+            constr_str,
+            bounds_str,
+            binary_vars,
+            general_vars,
+            output_folder=self._output_folder,
+        )
+
     def __check_bounds_control_input(self) -> None:
         # Checks if at the control inputs have bounds, log warning when a control input is not
         # bounded.
@@ -265,10 +370,26 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         The default solver for mixed integer problems is `Bonmin
         <http://projects.coin-or.org/Bonmin/>`_.
 
+        RTC-Tools specific options (consumed before passing the remainder to CasADi):
+
+        * ``export_lp`` (:class:`bool`, default ``False``): Export the transcribed problem
+          as an LP file to the output folder. The file is named
+          ``<ClassName>_<YYYYMMDD_HHMMSS>.lp``, or
+          ``<ClassName>_<YYYYMMDD_HHMMSS>_priority_<N>.lp`` when used with goal programming.
+          Only supported for CollocatedIntegratedOptimizationProblem subclasses with affine
+          objective and constraints. Problems with discrete variables are exported as MILP.
+          Raises :exc:`ValueError` if the problem is non-linear. Useful for debugging solver
+          behaviour or passing the problem to an external LP/MILP solver.
+
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
         """
-        options = {"error_on_fail": False, "optimized_num_dir": 3, "casadi_solver": ca.nlpsol}
+        options = {
+            "error_on_fail": False,
+            "optimized_num_dir": 3,
+            "casadi_solver": ca.nlpsol,
+            "export_lp": False,
+        }
 
         if self.__mixed_integer:
             options["solver"] = "bonmin"
