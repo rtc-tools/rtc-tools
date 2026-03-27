@@ -41,7 +41,10 @@ dependencies = [
 
 [project.optional-dependencies]
 netcdf = ["netCDF4"]
-all = ["netCDF4"]
+highs = [
+    "highspy>=1.13.1",
+]
+all = ["netCDF4", "highspy>=1.13.1"]
 
 [dependency-groups]
 build = [

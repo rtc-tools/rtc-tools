@@ -1,5 +1,6 @@
 import itertools
 import logging
+import time
 import warnings
 from abc import ABCMeta, abstractmethod
 
@@ -14,6 +15,14 @@ from rtctools._internal.casadi_helpers import (
     nullvertcat,
     reduce_matvec,
     substitute_in_external,
+)
+from rtctools._internal.casadi_to_lp import (
+    build_bounds,
+    build_constraints,
+    build_objective,
+    build_user_constraint_base_names,
+    sanitize_var_names,
+    write_lp_file,
 )
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 
@@ -94,6 +103,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__integrator_step_function = None
         self.__dae_residual_function_collocated = None
         self.__initial_residual_with_params_fun_map = None
+
+        # Constraint names for LP export; populated by transcribe(), None when not tracking.
+        self._constraint_names = None
 
         # Create dictionary of variables so that we have O(1) state lookup available
         self.__variables = AliasDict(self.alias_relation)
@@ -549,9 +561,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Path constraints
         path_constraints = self.path_constraints(0)
-        path_constraint_expressions = ca.vertcat(
-            *[f_constraint for (f_constraint, lb, ub) in path_constraints]
-        )
+        path_constraint_expressions = ca.vertcat(*[pc[0] for pc in path_constraints])
 
         # Delayed feedback
         delayed_feedback_expressions, delayed_feedback_states, delayed_feedback_durations = (
@@ -1211,6 +1221,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         lbg = []
         ubg = []
 
+        # Track constraint names only when LP export is requested.
+        track_constraint_names = self.solver_options().get("export_lp", False)
+        constraint_names = [] if track_constraint_names else None
         # Add constraints for initial conditions
         if self.__initial_residual_with_params_fun_map is None:
             initial_residual_with_params_fun = ca.Function(
@@ -1257,6 +1270,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         zeros = [0.0] * res.size1()
         lbg.extend(zeros)
         ubg.extend(zeros)
+        if track_constraint_names:
+            constraint_names.extend([f"initial_residual_{i}" for i in range(res.size1())])
 
         # The initial values and the interpolated mapped arguments are saved
         # such that can be reused in map_path_expression().
@@ -1280,6 +1295,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # of loop detection.
         for ensemble_member in range(self.ensemble_size):
             logger.info(f"Transcribing ensemble member {ensemble_member + 1}/{self.ensemble_size}")
+            # Member suffix appended to all constraint names generated in this iteration,
+            # ensuring uniqueness across ensemble members when ensemble_size > 1.
+            if track_constraint_names:
+                member_suffix = f"_m{ensemble_member}" if self.ensemble_size > 1 else ""
 
             initial_state = ensemble_aggregate["initial_state"][:, ensemble_member]
             initial_derivatives = ensemble_aggregate["initial_derivatives"][:, ensemble_member]
@@ -1380,6 +1399,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 g.append(ca.vertcat(*initial_derivative_constraints))
                 lbg.append(np.zeros(len(initial_derivative_constraints)))
                 ubg.append(np.zeros(len(initial_derivative_constraints)))
+                if track_constraint_names:
+                    n = len(initial_derivative_constraints)
+                    constraint_names.extend(
+                        [f"initial_derivative_{i}{member_suffix}" for i in range(n)]
+                    )
 
             # Initial conditions for integrator
             accumulation_X0 = []
@@ -1600,6 +1624,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 zeros = np.zeros(collocation_constraints.size1())
                 lbg.extend(zeros)
                 ubg.extend(zeros)
+                if track_constraint_names:
+                    # ca.vec flattens column-major: time is outer (slow), equation is inner (fast).
+                    # Loop order must match: for t, then for eq.
+                    constraint_names.extend(
+                        [
+                            f"collocation_eq{eq}_t{t}{member_suffix}"
+                            for t in range(n_collocation_times - 1)
+                            for eq in range(dae_residual_collocated_size)
+                        ]
+                    )
 
             # Prepare arguments for map_path_expression() calls to ca.map()
             if len(integrated_variables) + len(collocated_variables) > 0:
@@ -1902,6 +1936,13 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         zeros = np.zeros(n_collocation_times)
                         lbg.extend(zeros)
                         ubg.extend(zeros)
+                        if track_constraint_names:
+                            constraint_names.extend(
+                                [
+                                    f"delay_{in_canonical}_t{t}{member_suffix}"
+                                    for t in range(n_collocation_times)
+                                ]
+                            )
 
             # Objective
             f_member = self.objective(ensemble_member)
@@ -1926,10 +1967,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
             if logger.getEffectiveLevel() == logging.DEBUG:
                 for constraint in constraints:
-                    logger.debug("Adding constraint {}, {}, {}".format(*constraint))
+                    logger.debug("Adding constraint {}, {}, {}".format(*constraint[:3]))
 
             if constraints:
-                g_constraint, lbg_constraint, ubg_constraint = list(zip(*constraints, strict=True))
+                g_constraint, lbg_constraint, ubg_constraint = list(
+                    zip(*[c[:3] for c in constraints], strict=True)
+                )
 
                 lbg_constraint = list(lbg_constraint)
                 ubg_constraint = list(ubg_constraint)
@@ -1959,6 +2002,20 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 g.extend(g_constraint)
                 lbg.extend(lbg_constraint)
                 ubg.extend(ubg_constraint)
+                if track_constraint_names:
+                    base_names = build_user_constraint_base_names(constraints, "constraint")
+                    # strict=False: a vector constraint (size1() > 1) expands to multiple
+                    # rows in g but is still a single entry in g_constraint.
+                    for base, (g_i, _c) in zip(
+                        base_names, zip(g_constraint, constraints, strict=False), strict=False
+                    ):
+                        s = g_i.size1()
+                        if s > 1:
+                            constraint_names.extend(
+                                [f"{base}_{k}{member_suffix}" for k in range(s)]
+                            )
+                        else:
+                            constraint_names.append(f"{base}{member_suffix}")
 
             # Path constraints
             # We need to call self.path_constraints() again here,
@@ -1985,7 +2042,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 j = 0
                 for path_constraint in path_constraints:
                     if logger.getEffectiveLevel() == logging.DEBUG:
-                        logger.debug("Adding path constraint {}, {}, {}".format(*path_constraint))
+                        logger.debug(
+                            "Adding path constraint {}, {}, {}".format(*path_constraint[:3])
+                        )
 
                     s = path_constraint[0].size1()
 
@@ -2020,6 +2079,30 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                 lbg.extend(lbg_path_constraints.transpose().ravel())
                 ubg.extend(ubg_path_constraints.transpose().ravel())
+                if track_constraint_names:
+                    path_base_names_deduped = build_user_constraint_base_names(
+                        path_constraints, "path_constraint"
+                    )
+                    # Expand vector constraints (size1() > 1) to scalar base names.
+                    path_base_names = []
+                    for base, pc in zip(path_base_names_deduped, path_constraints, strict=True):
+                        s = pc[0].size1()
+                        if s > 1:
+                            path_base_names.extend([f"{base}_{k}" for k in range(s)])
+                        else:
+                            path_base_names.append(base)
+                    # lbg/ubg are filled by .transpose().ravel() — shape (n_times, n_constraints)
+                    # in row-major order, i.e. outer loop = time, inner = constraint.
+                    # This matches the order in which CasADi's ca.vec() flattens the
+                    # map output (column-major of (n_constraints, n_times)), so constraint
+                    # names must follow the same (time, constraint) ordering.
+                    constraint_names.extend(
+                        [
+                            f"{name}_t{t}{member_suffix}"
+                            for t in range(n_collocation_times)
+                            for name in path_base_names
+                        ]
+                    )
 
         # If inlining delay expressions, carry out the single call to ca.substitute()
         # A single call is more efficient as it constructs a single ca.Function internally,
@@ -2034,11 +2117,32 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         nlp = {"x": X, "f": ca.sum1(ca.vertcat(*f)), "g": ca.vertcat(*g)}
 
+        # Store constraint names for LP export (None when not tracking).
+        # The list must have exactly one entry per row in g; a mismatch means a
+        # constraint block was added without a corresponding name-tracking block.
+        if constraint_names is not None:
+            total_constraint_rows = int(nlp["g"].shape[0])
+            if len(constraint_names) != total_constraint_rows:
+                raise ValueError(
+                    f"constraint_names length ({len(constraint_names)}) does not match "
+                    f"number of constraint rows in g ({total_constraint_rows}). "
+                    "A constraint block is missing its track_constraint_names branch "
+                    "in transcribe()."
+                )
+        self._constraint_names = constraint_names
+
         # Done
         logger.info("Done transcribing problem")
 
         # Debug check coefficients
         self.__debug_check_transcribe_linear_coefficients(discrete, lbx, ubx, lbg, ubg, x0, nlp)
+
+        # Set _mixed_integer for callers that invoke transcribe() directly (bypassing optimize()).
+        # optimize() also sets this from the returned discrete array, so the two assignments
+        # are always consistent. The early solver_options() call inside transcribe() (for
+        # track_constraint_names) still sees False, which is acceptable — export_lp does not
+        # depend on _mixed_integer.
+        self._mixed_integer = np.any(discrete)
 
         return discrete, lbx, ubx, lbg, ubg, x0, nlp
 
@@ -2073,8 +2177,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
     @property
     def _collint_variable_indices(self) -> list[dict]:
-        """Variable name to index mapping (raw: int, slice, or ndarray) for each ensemble member.
-        Consumed by result extraction (extract_controls, extract_states) and LP export."""
+        """Variable name to index mapping for each ensemble member."""
         return list(self.__indices)
 
     @property
@@ -2082,6 +2185,115 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         """Variable name to index mapping (normalized to list[int]) for each ensemble member.
         Consumed by LP export; avoids re-normalizing the raw int/slice/ndarray values."""
         return list(self.__indices_as_lists)
+
+    @property
+    def _collint_constraint_names(self) -> list[str] | None:
+        """Constraint names for LP export, or None if not tracking (export_lp=False).
+
+        Each entry corresponds to a row in the constraint vector ``g`` returned
+        by ``transcribe()``. Names are built during ``transcribe()`` only when
+        ``solver_options()["export_lp"]`` is True.
+
+        Mixins that override ``transcribe()`` and append rows to ``g`` must also
+        extend ``self._constraint_names`` by the same number of entries, or the
+        length check in ``_export_lp_file`` will raise a ``ValueError``.
+        Use :meth:`_reset_constraint_names` to replace the list atomically.
+        """
+        return self._constraint_names
+
+    def _reset_constraint_names(self, names: list[str] | None) -> None:
+        """Replace the constraint name list used for LP export.
+
+        Provided as a stable extension point for mixins (e.g.
+        ``SinglePassGoalProgrammingMixin``) that need to reset the list between
+        transcribe passes without accessing the backing field directly.
+        """
+        self._constraint_names = names
+
+    def _export_lp_file(
+        self,
+        f: ca.SX,
+        g: ca.SX,
+        x: ca.SX,
+        lbg: list,
+        ubg: list,
+        lbx: list,
+        ubx: list,
+        discrete: list[bool],
+    ) -> None:
+        """Export the transcribed LP/MILP problem as a file.
+
+        Called by :meth:`optimize` when ``export_lp=True`` is set in solver options.
+        Validates that the problem is compatible with LP/MILP export (affine objective
+        and constraints), builds the LP file representation, and writes it to the output
+        folder. Problems with discrete variables are exported as MILP (with a General
+        section listing integer variables). For ensemble problems, shared variables
+        (controls) are exported without a member suffix; per-member variables (states)
+        receive a ``_m{i}`` suffix.
+
+        Args:
+            f: Symbolic objective expression (already expanded to SX).
+            g: Symbolic constraint expression (already expanded to SX).
+            x: Decision variable vector.
+            lbg, ubg: Lower/upper bounds on constraints.
+            lbx, ubx: Lower/upper bounds on variables.
+            discrete: Boolean array indicating discrete variables.
+
+        Raises:
+            ValueError: If the problem has a non-affine objective or constraints, or
+                uses non-linear collocation (``linear_collocation=False``).
+        """
+        if getattr(self, "_dae_linear_collocation", self.linear_collocation) is False:
+            raise ValueError(
+                "LP/MILP export is not supported for problems with "
+                "non-linear Modelica DAE equations."
+            )
+
+        if not is_affine(f, x):
+            raise ValueError(
+                "LP/MILP export requires the objective function to be affine in the "
+                "decision variables, but the objective is non-linear."
+            )
+
+        if not is_affine(g, x):
+            raise ValueError(
+                "LP/MILP export requires all constraints to be affine in the "
+                "decision variables, but some constraints are non-linear."
+            )
+
+        if self._collint_constraint_names is not None:
+            if len(self._collint_constraint_names) != g.shape[0]:
+                raise ValueError(
+                    f"constraint_names length ({len(self._collint_constraint_names)}) "
+                    f"does not match constraint vector length ({g.shape[0]}). "
+                    "A transcribe() override may have added constraints "
+                    "without extending _constraint_names."
+                )
+
+        var_names = sanitize_var_names(self._collint_variable_indices_as_lists, x.shape[0])
+        obj_str = build_objective(f, x, var_names)
+        constr_str, extra_bounds_str = build_constraints(
+            g, x, lbg, ubg, var_names, self._collint_constraint_names
+        )
+        bounds_str, binary_vars, general_vars = build_bounds(var_names, lbx, ubx, discrete)
+        if extra_bounds_str:
+            bounds_str = (bounds_str + "\n" + extra_bounds_str) if bounds_str else extra_bounds_str
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        p = getattr(self, "_gp_current_priority", None)
+        n = getattr(self, "_gp_n_priorities", 0)
+        priority_suffix = f"_priority_{p}" if p is not None and n > 1 else ""
+        filename = f"{self.__class__.__name__}_{timestamp}{priority_suffix}.lp"
+
+        write_lp_file(
+            filename,
+            obj_str,
+            constr_str,
+            bounds_str,
+            binary_vars,
+            general_vars,
+            output_folder=self._output_folder,
+        )
 
     def solver_options(self):
         options = super().solver_options()

@@ -1,5 +1,4 @@
 import logging
-import time
 from abc import ABCMeta, abstractmethod, abstractproperty
 from typing import Any, Literal, overload
 
@@ -7,14 +6,6 @@ import casadi as ca
 import numpy as np
 
 from rtctools._internal.alias_tools import AliasDict
-from rtctools._internal.casadi_helpers import is_affine
-from rtctools._internal.casadi_to_lp import (
-    build_bounds,
-    build_constraints,
-    build_objective,
-    sanitize_var_names,
-    write_lp_file,
-)
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
 from rtctools.data.storage import DataStoreAccessor
@@ -63,7 +54,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
 
-        self.__mixed_integer = False
+        self._mixed_integer = False
 
     def optimize(
         self,
@@ -98,29 +89,25 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         else:
             logger.debug("Skipping Preprocessing in OptimizationProblem.optimize()")
 
-        # Transcribe problem
         discrete, lbx, ubx, lbg, ubg, x0, nlp = self.transcribe()
 
-        # Create an NLP solver
-        logger.debug("Collecting solver options")
+        # Set _mixed_integer from the returned discrete array so that solver_options()
+        # selects the correct solver (ipopt vs bonmin) for all transcribe() implementations.
+        self._mixed_integer = np.any(discrete)
 
-        self.__mixed_integer = np.any(discrete)
         options = {}
         options.update(self.solver_options())  # Create a copy
 
-        logger.debug("Creating solver")
-
         expand = options.pop("expand", False)
         export_lp = options.pop("export_lp", False)
+
         if expand or export_lp:
             # NOTE: CasADi only supports the "expand" option for nlpsol. To
             # also be able to expand with e.g. qpsol, we do the expansion
             # ourselves here. Expansion is also required for LP export.
             logger.debug("Expanding objective and constraints to SX")
 
-            expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
-            x_sx = ca.SX.sym("x", *nlp["x"].shape)
-            f_sx, g_sx = expand_f_g(x_sx)
+            f_sx, g_sx, x_sx = self._expand_nlp(nlp)
 
             nlp["f"] = f_sx
             nlp["g"] = g_sx
@@ -152,7 +139,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         nlpsol_options = {**options}
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             nlpsol_options["discrete"] = discrete
         if iteration_callback:
             nlpsol_options["iteration_callback"] = iteration_callback
@@ -163,6 +150,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         if my_solver != "bonmin":
             nlpsol_options.pop("bonmin", None)
 
+        logger.debug("Creating solver")
         solver = casadi_solver("nlp", my_solver, nlp, nlpsol_options)
 
         # Solve NLP
@@ -236,6 +224,19 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         return success
 
+    @staticmethod
+    def _expand_nlp(nlp: dict[str, ca.MX]) -> tuple[ca.SX, ca.SX, ca.SX]:
+        """Expand the MX NLP to SX form and return (f_sx, g_sx, x_sx).
+
+        Used when ``expand=True`` or ``export_lp=True`` is set in solver options.
+        Callers are responsible for replacing ``nlp["f"]``, ``nlp["g"]``, ``nlp["x"]``
+        when the SX form is also needed for the solver.
+        """
+        expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
+        x_sx = ca.SX.sym("x", *nlp["x"].shape)
+        f_sx, g_sx = expand_f_g(x_sx)
+        return f_sx, g_sx, x_sx
+
     def _export_lp_file(
         self,
         f: ca.SX,
@@ -249,82 +250,14 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
-        Called by optimize() when export_lp=True. Validates that the problem
-        is compatible with LP/MILP export (affine objective and constraints),
-        builds the LP file representation, and writes it to the output folder.
-        Problems with discrete variables are exported as MILP (with a General
-        section listing integer variables). For ensemble problems, the single
-        combined LP/MILP is exported with per-member suffixes on state variables.
-
-        Args:
-            f: Symbolic objective expression (already expanded to SX).
-            g: Symbolic constraint expression (already expanded to SX).
-            x: Decision variable vector.
-            lbg, ubg: Lower/upper bounds on constraints.
-            lbx, ubx: Lower/upper bounds on variables.
-            discrete: Boolean array indicating discrete variables.
-
-        Raises:
-            ValueError: If the problem does not inherit from
-                CollocatedIntegratedOptimizationProblem, or has a non-affine
-                objective or constraints.
+        Called by :meth:`optimize` when ``export_lp`` is requested.
+        The base implementation raises :exc:`NotImplementedError`; subclasses that support LP
+        export override this method. See
+        :class:`~rtctools.optimization.collocated_integrated_optimization_problem.CollocatedIntegratedOptimizationProblem`
         """
-        # hasattr duck-typing guard: importing CIOP here would create a circular dependency
-        # (optimization_problem → collocated_integrated_optimization_problem
-        #  → optimization_problem).
-        if not hasattr(self, "_collint_variable_indices_as_lists"):
-            raise ValueError(
-                "LP/MILP export is only supported for "
-                "CollocatedIntegratedOptimizationProblem subclasses."
-            )
-
-        if (
-            getattr(self, "_dae_linear_collocation", getattr(self, "linear_collocation", None))
-            is False
-        ):
-            raise ValueError(
-                "LP/MILP export is not supported for problems with "
-                "non-linear Modelica DAE equations."
-            )
-
-        if not is_affine(f, x):
-            raise ValueError(
-                "LP/MILP export requires the objective function to be affine in the "
-                "decision variables, but the objective is non-linear."
-            )
-
-        if not is_affine(g, x):
-            raise ValueError(
-                "LP/MILP export requires all constraints to be affine in the "
-                "decision variables, but some constraints are non-linear."
-            )
-
-        # _collint_variable_indices is guaranteed to be populated here: transcribe() (called
-        # in optimize()) sets it before returning. The combined decision vector covers
-        # all ensemble members; shared variables (controls) get no member suffix while
-        # per-member variables (states) are suffixed with _m{i}.
-        var_names = sanitize_var_names(
-            self._collint_variable_indices_as_lists,
-            x.shape[0],
-        )
-        obj_str = build_objective(f, x, var_names)
-        constr_str = build_constraints(g, x, lbg, ubg, var_names)
-        bounds_str, binary_vars, general_vars = build_bounds(var_names, lbx, ubx, discrete)
-
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        p = getattr(self, "_gp_current_priority", None)
-        n = getattr(self, "_gp_n_priorities", 0)
-        priority_suffix = f"_priority_{p}" if p is not None and n > 1 else ""
-        filename = f"{self.__class__.__name__}_{timestamp}{priority_suffix}.lp"
-
-        write_lp_file(
-            filename,
-            obj_str,
-            constr_str,
-            bounds_str,
-            binary_vars,
-            general_vars,
-            output_folder=self._output_folder,
+        raise NotImplementedError(
+            "LP/MILP export is only supported for "
+            "CollocatedIntegratedOptimizationProblem subclasses."
         )
 
     def __check_bounds_control_input(self) -> None:
@@ -376,10 +309,14 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
           as an LP file to the output folder. The file is named
           ``<ClassName>_<YYYYMMDD_HHMMSS>.lp``, or
           ``<ClassName>_<YYYYMMDD_HHMMSS>_priority_<N>.lp`` when used with goal programming.
-          Only supported for CollocatedIntegratedOptimizationProblem subclasses with affine
-          objective and constraints. Problems with discrete variables are exported as MILP.
-          Raises :exc:`ValueError` if the problem is non-linear. Useful for debugging solver
-          behaviour or passing the problem to an external LP/MILP solver.
+          Only supported for CollocatedIntegratedOptimizationProblem subclasses with
+          ``linear_collocation=True`` (the default) and affine objective and constraints.
+          Problems with discrete variables are exported as MILP. Raises :exc:`ValueError`
+          if ``linear_collocation=False``, the objective is non-affine, or any constraint
+          is non-affine. Raises :exc:`NotImplementedError` for non-CIOP subclasses.
+          Enabling this option implies
+          SX expansion of the problem (same effect as ``expand=True``). Useful for debugging
+          solver behaviour or passing the problem to an external LP/MILP solver.
 
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
@@ -391,7 +328,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             "export_lp": False,
         }
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             options["solver"] = "bonmin"
 
             bonmin_options = options["bonmin"] = {}
@@ -871,7 +808,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str]
+    ]:
         """
         Returns a list of constraints for the given ensemble member.
 
@@ -884,13 +824,17 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
                   the constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds must be numbers.
 
+                  An optional 4th element may be provided as a string label for the
+                  constraint. When ``export_lp=True``, this label is used in the LP file.
+                  Example: ``(expr, 0.0, 1.0, "my_constraint")``.
+
         Example::
 
             def constraints(self, ensemble_member):
                 t = 1.0
                 constraint1 = (
                     2 * self.state_at('x', t, ensemble_member),
-                    2.0, 4.0)
+                    2.0, 4.0, "double_x")
                 constraint2 = (
                     self.state_at('x', t, ensemble_member) + self.state_at('y', t, ensemble_member),
                     2.0, 3.0)
@@ -901,7 +845,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def path_constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray | Timeseries, float | np.ndarray | Timeseries]
+        | tuple[ca.MX, float | np.ndarray | Timeseries, float | np.ndarray | Timeseries, str]
+    ]:
         """
         Returns a list of path constraints.
 
@@ -916,11 +863,15 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
                   the path constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds may be numbers or :class:`.Timeseries` objects.
 
+                  An optional 4th element may be provided as a string label. When
+                  ``export_lp=True``, the label is used in the LP file with a ``_t{i}``
+                  suffix per time step. Example: ``(expr, 0.0, 1.0, "flow_bounds")``.
+
         Example::
 
             def path_constraints(self, ensemble_member):
                 # 2 * x must lie between 2 and 4 for every time instance.
-                path_constraint1 = (2 * self.state('x'), 2.0, 4.0)
+                path_constraint1 = (2 * self.state('x'), 2.0, 4.0, "double_x")
                 # x + y must lie between 2 and 3 for every time instance
                 path_constraint2 = (self.state('x') + self.state('y'), 2.0, 3.0)
                 return [path_constraint1, path_constraint2]
