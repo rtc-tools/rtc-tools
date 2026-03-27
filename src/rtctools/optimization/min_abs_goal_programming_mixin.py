@@ -10,8 +10,10 @@ from .goal_programming_mixin import GoalProgrammingMixin
 from .goal_programming_mixin_base import (
     Goal,
     StateGoal,
+    _ConstraintTuple,
     _EmptyEnsembleList,
     _EmptyEnsembleOrderedDict,
+    _goal_constraint_name,
     _GoalConstraint,
     _GoalProgrammingMixinBase,
 )
@@ -115,7 +117,10 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
         constraints = super().constraints(ensemble_member)
 
         for constraint in self.__problem_constraints[ensemble_member]:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return constraints
 
@@ -123,7 +128,10 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
         path_constraints = super().path_constraints(ensemble_member)
 
         for constraint in self.__problem_path_constraints[ensemble_member]:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            path_constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return path_constraints
 
@@ -197,8 +205,17 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
                 _pos = functools.partial(_constraint_func, sign=1)
                 _neg = functools.partial(_constraint_func, sign=-1)
 
-                constraints[ensemble_member].append(_GoalConstraint(None, _pos, 0.0, np.inf, False))
-                constraints[ensemble_member].append(_GoalConstraint(None, _neg, 0.0, np.inf, False))
+                goal_constr_base_name = f"{goal.__class__.__name__}_p{goal.priority}"
+                constraints[ensemble_member].append(
+                    _GoalConstraint(
+                        None, _pos, 0.0, np.inf, False, f"{goal_constr_base_name}_abs_pos"
+                    )
+                )
+                constraints[ensemble_member].append(
+                    _GoalConstraint(
+                        None, _neg, 0.0, np.inf, False, f"{goal_constr_base_name}_abs_neg"
+                    )
+                )
 
             # Overwrite the original goal, such that it is just a minimization
             # of the additional variable.

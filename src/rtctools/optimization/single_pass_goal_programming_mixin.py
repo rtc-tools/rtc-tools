@@ -6,14 +6,17 @@ from enum import Enum
 import casadi as ca
 import numpy as np
 
+from rtctools._internal.casadi_to_lp import _deduplicate_constraint_names
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
 
 from .goal_programming_mixin import GoalProgrammingMixin
 from .goal_programming_mixin_base import (  # noqa: F401
     Goal,
     StateGoal,
+    _ConstraintTuple,
     _EmptyEnsembleList,
     _EmptyEnsembleOrderedDict,
+    _goal_constraint_name,
     _GoalProgrammingMixinBase,
 )
 from .timeseries import Timeseries
@@ -178,7 +181,10 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         )
 
         for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return constraints
 
@@ -191,7 +197,10 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         )
 
         for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            path_constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return path_constraints
 
@@ -324,6 +333,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         priorities = sorted(
             {int(goal.priority) for goal in itertools.chain(goals, path_goals) if not goal.is_empty}
         )
+        self.__priorities = priorities
 
         for priority in priorities:
             subproblems.append(
@@ -365,7 +375,6 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         self.__current_priority = 0
         self.__original_constraints = None
-        self._gp_n_priorities = len(priorities)
 
         self.__objectives_per_priority = []
         self.__path_objectives_per_priority = []
@@ -413,6 +422,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__objectives_per_priority.append(subproblem_objectives)
             self.__path_objectives_per_priority.append(subproblem_path_objectives)
 
+        self._gp_n_priorities = len(priorities)
         for priority in priorities:
             logger.info(f"Solving goals at priority {priority}")
             self._gp_current_priority = priority
@@ -489,6 +499,12 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         if self._gp_first_run:
             discrete, lbx, ubx, lbg, ubg, x0, nlp = super().transcribe()
             self.__original_transcribe = (discrete, lbx, ubx, lbg, ubg, x0, nlp)
+            # Store base constraint names so they can be reset on each subsequent pass.
+            self.__base_constraint_names = (
+                list(self._collint_constraint_names)
+                if self._collint_constraint_names is not None
+                else None
+            )
 
             self.__additional_constraints = []
             self.__objectives = []
@@ -542,6 +558,25 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             ubg = [*ubg.copy(), *ubg_extra]
 
             nlp["g"] = g
+
+            # Extend constraint names to cover the additional priority-tightening constraints.
+            # Reset to base names first so the list doesn't grow across passes (relevant for
+            # UPDATE_OBJECTIVE_CONSTRAINT_BOUNDS where all constraints are present from pass 1).
+            # Each entry in g_extra is a scalar objective expression (summed over ensemble
+            # members), so one name per entry is correct. If g_extra ever contains vector
+            # expressions, this loop must be updated to emit size1() names per entry.
+            if self._collint_constraint_names is not None:
+                updated_constraint_names = list(self.__base_constraint_names)
+                for j in range(len(g_extra)):
+                    # Name identifies which prior priority is constrained and at which pass.
+                    # These names use LP_RESERVED_NAME_PREFIXES so user names cannot collide,
+                    # but deduplication is re-run below to enforce the uniqueness invariant.
+                    updated_constraint_names.append(
+                        f"single_pass_objective_p{self.__priorities[j]}__at_p{self._gp_current_priority}_{j}"
+                    )
+                self._reset_constraint_names(
+                    _deduplicate_constraint_names(updated_constraint_names)
+                )
 
         nlp["f"] = self.__objectives[self.__current_priority]
 
