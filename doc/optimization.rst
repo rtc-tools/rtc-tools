@@ -17,3 +17,4 @@ Contents:
    optimization/initial_state_estimation
    optimization/multi_objective
    optimization/forecast_uncertainty
+   optimization/solver_configuration
