@@ -55,9 +55,9 @@ model Example
   input Real DrinkingWaterExtractionPump_Q(fixed = false, min = 0., max = 2.) = DrinkingWaterExtractionPump.Q;
 initial equation
   // Steady state initialization
-  der(LowerChannel.Q) = 0.0;
-  der(MiddleChannel.Q) = 0.0;
-  der(UpperChannel.Q) = 0.0;
+  der(LowerChannel.Q) = 0;
+  der(MiddleChannel.Q) = 0;
+  der(UpperChannel.Q) = 0;
 equation
   connect(DrinkingWaterExtractionPump.HQDown, DrinkingWaterPlant.HQ) annotation(Line(points = {{20, 26}, {38, 26}, {38, 36}, {38, 36}}, color = {0, 0, 255}));
   connect(Inflow.HQ, UpperChannel.HQUp) annotation(Line(points = {{-88, 26}, {-70, 26}, {-70, 26}, {-70, 26}}, color = {0, 0, 255}));
