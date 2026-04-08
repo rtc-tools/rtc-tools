@@ -2,6 +2,7 @@ import logging
 import sys
 import unittest
 
+import casadi as ca
 import numpy as np
 from casadi import MX
 
@@ -385,27 +386,42 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
             self.tolerance,
         )
 
-    @unittest.skip
     def test_states_in(self):
-        states = list(self.problem.states_in("x", 0.05, 0.95))
-        verify = []
-        for t in self.problem.times()[1:-1]:
-            verify.append(self.problem.state_at("x", t))
-        self.assertEqual(repr(states), repr(verify))
+        def eval_expr(expr):
+            return np.array(
+                ca.Function("f", [self.problem.solver_input], [ca.vec(expr)])(
+                    self.problem.solver_output
+                )
+            ).ravel()
 
-        states = list(self.problem.states_in("x", 0.051, 0.951))
-        verify = [self.problem.state_at("x", 0.051)]
-        for t in self.problem.times()[2:-1]:
-            verify.append(self.problem.state_at("x", t))
-        verify.append(self.problem.state_at("x", 0.951))
-        self.assertEqual(repr(states), repr(verify))
+        # On-grid endpoints: only interior points are included
+        states = self.problem.states_in("x", 0.05, 0.95)
+        verify = ca.vertcat(*[self.problem.state_at("x", t) for t in self.problem.times()[1:-1]])
+        states_eval, verify_eval = eval_expr(states), eval_expr(verify)
+        self.assertEqual(len(states_eval), len(verify_eval))
+        self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
 
-        states = list(self.problem.states_in("x", 0.0, 0.951))
-        verify = []
-        for t in self.problem.times()[0:-1]:
-            verify.append(self.problem.state_at("x", t))
-        verify.append(self.problem.state_at("x", 0.951))
-        self.assertEqual(repr(states), repr(verify))
+        # Off-grid endpoints: endpoints are included via state_at() interpolation
+        t_start, t_end = 0.051, 0.951
+        states = self.problem.states_in("x", t_start, t_end)
+        verify = ca.vertcat(
+            self.problem.state_at("x", t_start),
+            *[self.problem.state_at("x", t) for t in self.problem.times()[2:-1]],
+            self.problem.state_at("x", t_end),
+        )
+        states_eval, verify_eval = eval_expr(states), eval_expr(verify)
+        self.assertEqual(len(states_eval), len(verify_eval))
+        self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
+
+        # Mixed: on-grid start (t=0.0), off-grid end
+        states = self.problem.states_in("x", 0.0, t_end)
+        verify = ca.vertcat(
+            *[self.problem.state_at("x", t) for t in self.problem.times()[0:-1]],
+            self.problem.state_at("x", t_end),
+        )
+        states_eval, verify_eval = eval_expr(states), eval_expr(verify)
+        self.assertEqual(len(states_eval), len(verify_eval))
+        self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
 
     def test_der(self):
         der = self.problem.der_at("x", 0.05)
@@ -416,43 +432,41 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
         verify = (self.problem.state_at("x", 0.1) - self.problem.state_at("x", 0.05)) / 0.05
         self.assertEqual(repr(der), repr(verify))
 
-    @unittest.skip("This test fails, because we use CasADi sumRows() now.")
     def test_integral(self):
+        # Compare numerically rather than via repr(): integral() uses ca.sum1() (sumRows)
+        # which produces a different symbolic graph than manual accumulation, but the same value.
+        def eval_expr(expr):
+            return float(
+                ca.Function("f", [self.problem.solver_input], [expr])(self.problem.solver_output)
+            )
+
+        def trapezoid(knots):
+            verify = MX(0.0)
+            for i in range(len(knots) - 1):
+                verify += (
+                    0.5
+                    * (
+                        self.problem.state_at("x", knots[i])
+                        + self.problem.state_at("x", knots[i + 1])
+                    )
+                    * (knots[i + 1] - knots[i])
+                )
+            return verify
+
         integral = self.problem.integral("x", 0.05, 0.95)
-        knots = self.problem.times()[1:-1]
-        verify = MX(0.0)
-        for i in range(len(knots) - 1):
-            verify += (
-                0.5
-                * (self.problem.state_at("x", knots[i]) + self.problem.state_at("x", knots[i + 1]))
-                * (knots[i + 1] - knots[i])
-            )
-        self.assertEqual(repr(integral), repr(verify))
+        verify = trapezoid(self.problem.times()[1:-1])
+        self.assertAlmostEqual(eval_expr(integral), eval_expr(verify), self.tolerance)
 
-        integral = self.problem.integral("x", 0.051, 0.951)
-        knots = []
-        knots.append(0.051)
-        knots.extend(self.problem.times()[2:-1])
-        knots.append(0.951)
-        verify = MX(0.0)
-        for i in range(len(knots) - 1):
-            verify += (
-                0.5
-                * (self.problem.state_at("x", knots[i]) + self.problem.state_at("x", knots[i + 1]))
-                * (knots[i + 1] - knots[i])
-            )
-        self.assertEqual(repr(integral), repr(verify))
+        # Note: for off-grid endpoints (t_start, t_end), both integral() and trapezoid()
+        # call state_at() for interpolation, so a bug in that shared code would not be caught here.
+        t_start, t_end = 0.051, 0.951  # off-grid endpoints
+        integral = self.problem.integral("x", t_start, t_end)
+        verify = trapezoid([t_start, *self.problem.times()[2:-1], t_end])
+        self.assertAlmostEqual(eval_expr(integral), eval_expr(verify), self.tolerance)
 
-        integral = self.problem.integral("x", 0.0, 0.951)
-        knots = list(self.problem.times()[0:-1]) + [0.951]
-        verify = MX(0.0)
-        for i in range(len(knots) - 1):
-            verify += (
-                0.5
-                * (self.problem.state_at("x", knots[i]) + self.problem.state_at("x", knots[i + 1]))
-                * (knots[i + 1] - knots[i])
-            )
-        self.assertEqual(repr(integral), repr(verify))
+        integral = self.problem.integral("x", 0.0, t_end)
+        verify = trapezoid([*self.problem.times()[0:-1], t_end])
+        self.assertAlmostEqual(eval_expr(integral), eval_expr(verify), self.tolerance)
 
 
 class TestModelicaMixinScaled(TestModelicaMixin):
