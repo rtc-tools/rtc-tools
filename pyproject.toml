@@ -77,6 +77,7 @@ Download = "http://github.com/rtc-tools/rtc-tools/"
 [project.scripts]
 rtc-tools-download-examples = "rtctools.rtctoolsapp:download_examples"
 rtc-tools-copy-libraries = "rtctools.rtctoolsapp:copy_libraries"
+rtc-tools-migrate-model = "rtctools.rtctoolsapp:migrate_model"
 
 [tool.hatch.version]
 source = "vcs"
