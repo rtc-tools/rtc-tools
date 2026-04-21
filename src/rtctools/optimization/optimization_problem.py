@@ -54,7 +54,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
 
-        self.__mixed_integer = False
+        self._mixed_integer = False
 
     def optimize(
         self,
@@ -95,25 +95,28 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Create an NLP solver
         logger.debug("Collecting solver options")
 
-        self.__mixed_integer = np.any(discrete)
+        # Set _mixed_integer from the returned discrete array so that solver_options()
+        # selects the correct solver (ipopt vs bonmin) for all transcribe() implementations.
+        self._mixed_integer = np.any(discrete)
         options = {}
         options.update(self.solver_options())  # Create a copy
 
-        logger.debug("Creating solver")
-
-        if options.pop("expand", False):
+        expand = options.pop("expand", False)
+        export_lp = options.pop("export_lp", False)
+        if expand or export_lp:
             # NOTE: CasADi only supports the "expand" option for nlpsol. To
             # also be able to expand with e.g. qpsol, we do the expansion
-            # ourselves here.
+            # ourselves here. Expansion is also required for LP export.
             logger.debug("Expanding objective and constraints to SX")
 
-            expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
-            X_sx = ca.SX.sym("X", *nlp["x"].shape)
-            f_sx, g_sx = expand_f_g(X_sx)
+            f_sx, g_sx, x_sx = self._expand_nlp(nlp)
 
             nlp["f"] = f_sx
             nlp["g"] = g_sx
-            nlp["x"] = X_sx
+            nlp["x"] = x_sx
+
+            if export_lp:
+                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete)
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -138,7 +141,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         nlpsol_options = {**options}
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             nlpsol_options["discrete"] = discrete
         if iteration_callback:
             nlpsol_options["iteration_callback"] = iteration_callback
@@ -222,6 +225,41 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         return success
 
+    def _export_lp_file(
+        self,
+        f: ca.SX,
+        g: ca.SX,
+        x: ca.SX,
+        lbg: list,
+        ubg: list,
+        lbx: list,
+        ubx: list,
+        discrete: list[bool],
+    ) -> None:
+        """Export the transcribed LP/MILP problem as a file.
+
+        Called by :meth:`optimize` when ``export_lp`` is requested.
+        The base implementation raises :exc:`NotImplementedError`; subclasses that support LP
+        export override this method and use :attr:`_collint_variable_indices_as_lists` to map
+        variable names to solver vector indices. See
+        :class:`~rtctools.optimization.collocated_integrated_optimization_problem.CollocatedIntegratedOptimizationProblem`
+        """
+        raise NotImplementedError(
+            "LP/MILP export is only supported for "
+            "CollocatedIntegratedOptimizationProblem subclasses."
+        )
+
+    @staticmethod
+    def _expand_nlp(nlp: dict[str, ca.MX]) -> tuple[ca.SX, ca.SX, ca.SX]:
+        """Expand the MX NLP to SX form and return (f_sx, g_sx, x_sx).
+
+        Used when ``expand=True`` or ``export_lp=True`` is set in solver options.
+        """
+        expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
+        x_sx = ca.SX.sym("x", *nlp["x"].shape)
+        f_sx, g_sx = expand_f_g(x_sx)
+        return f_sx, g_sx, x_sx
+
     def __check_bounds_control_input(self) -> None:
         # Checks if at the control inputs have bounds, log warning when a control input is not
         # bounded.
@@ -265,12 +303,27 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         The default solver for mixed integer problems is `Bonmin
         <http://projects.coin-or.org/Bonmin/>`_.
 
+        RTC-Tools specific options (consumed before passing the remainder to CasADi):
+
+        * ``export_lp`` (:class:`bool`, default ``False``): Export the transcribed problem
+          as an LP file to the output folder. The file is named
+          ``<ClassName>_<YYYYMMDD_HHMMSS>.lp``, or
+          ``<ClassName>_<YYYYMMDD_HHMMSS>_priority_<N>.lp`` when used with goal programming.
+          Only supported for CollocatedIntegratedOptimizationProblem subclasses with affine
+          objective and constraints. Problems with discrete variables are exported as MILP.
+          Raises :exc:`ValueError` if the problem is non-linear. Useful for debugging solver
+          behaviour or passing the problem to an external LP/MILP solver.
+
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
         """
-        options = {"error_on_fail": False, "optimized_num_dir": 3, "casadi_solver": ca.nlpsol}
+        options = {
+            "error_on_fail": False,
+            "optimized_num_dir": 3,
+            "casadi_solver": ca.nlpsol,
+        }
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             options["solver"] = "bonmin"
 
             bonmin_options = options["bonmin"] = {}
