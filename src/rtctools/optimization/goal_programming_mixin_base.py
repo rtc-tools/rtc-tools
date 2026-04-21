@@ -512,6 +512,11 @@ class _GoalConstraint:
 
 
 class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._gp_current_priority = None  # Set to the active priority during optimize()
+        self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
+
     def _gp_n_objectives(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
         return (
             ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
