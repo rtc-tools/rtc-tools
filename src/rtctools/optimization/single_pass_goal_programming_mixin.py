@@ -365,6 +365,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         self.__current_priority = 0
         self.__original_constraints = None
+        self._gp_n_priorities = len(priorities)
 
         self.__objectives_per_priority = []
         self.__path_objectives_per_priority = []
@@ -414,6 +415,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         for priority in priorities:
             logger.info(f"Solving goals at priority {priority}")
+            self._gp_current_priority = priority
 
             # Call the pre priority hook
             self.priority_started(priority)
