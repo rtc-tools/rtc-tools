@@ -1,5 +1,6 @@
 import itertools
 import logging
+import time
 import warnings
 from abc import ABCMeta, abstractmethod
 
@@ -14,6 +15,13 @@ from rtctools._internal.casadi_helpers import (
     nullvertcat,
     reduce_matvec,
     substitute_in_external,
+)
+from rtctools._internal.casadi_to_lp import (
+    _build_bounds,
+    _build_constraints,
+    _build_objective,
+    _sanitize_var_names,
+    _write_lp_file,
 )
 from rtctools._internal.debug_check_helpers import DebugLevel, debug_check
 
@@ -834,6 +842,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         "This will, in general, result in the existence of multiple local optima "
                         "and trouble finding a feasible initial solution."
                     )
+
+            # Store the DAE-derived linearity value so _export_lp_file can check it
+            # independently of transient overrides (e.g. SinglePassGoalProgrammingMixin
+            # sets linear_collocation=False to disable jac_c_constant for IPOPT, which
+            # must not prevent LP export of a problem with a linear DAE).
+            self._dae_linear_collocation = self.linear_collocation
 
             # Transcribe DAE using theta method collocation
             if self.integrate_states:
@@ -2065,6 +2079,84 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
     def solver_input(self):
         return self.__solver_input
 
+    @property
+    def _collint_variable_indices_as_lists(self) -> list[dict]:
+        """Variable name to index mapping (normalized to list[int]) for each ensemble member.
+        Consumed by LP export; avoids re-normalizing the raw int/slice/ndarray values."""
+        return list(self.__indices_as_lists)
+
+    def _export_lp_file(
+        self,
+        f: ca.SX,
+        g: ca.SX,
+        x: ca.SX,
+        lbg: list,
+        ubg: list,
+        lbx: list,
+        ubx: list,
+        discrete: list[bool],
+    ) -> None:
+        """Export the transcribed LP/MILP problem as a file.
+
+        Called by :meth:`optimize` when ``export_lp=True`` is set in solver options.
+        Validates that the problem is compatible with LP/MILP export (affine objective
+        and constraints), builds the LP file representation, and writes it to the output
+        folder. Problems with discrete variables are exported as MILP (with a General
+        section listing integer variables). For ensemble problems, shared variables
+        (controls) are exported without a member suffix; per-member variables (states)
+        receive a ``__m{i}`` suffix (e.g. ``x__t3__m0``).
+
+        Args:
+            f: Symbolic objective expression (already expanded to SX).
+            g: Symbolic constraint expression (already expanded to SX).
+            x: Decision variable vector.
+            lbg, ubg: Lower/upper bounds on constraints.
+            lbx, ubx: Lower/upper bounds on variables.
+            discrete: Boolean array indicating discrete variables.
+
+        Raises:
+            ValueError: If the problem has a non-affine objective or constraints, or
+                uses non-linear collocation (``linear_collocation=False``).
+        """
+        if getattr(self, "_dae_linear_collocation", self.linear_collocation) is False:
+            raise ValueError(
+                "LP/MILP export is not supported for problems with "
+                "non-linear Modelica DAE equations."
+            )
+
+        if not is_affine(f, x):
+            raise ValueError(
+                "LP/MILP export requires the objective function to be affine in the "
+                "decision variables, but the objective is non-linear."
+            )
+
+        if not is_affine(g, x):
+            raise ValueError(
+                "LP/MILP export requires all constraints to be affine in the "
+                "decision variables, but some constraints are non-linear."
+            )
+
+        var_names = _sanitize_var_names(self._collint_variable_indices_as_lists, x.shape[0])
+        obj_str = _build_objective(f, x, var_names)
+        constr_str = _build_constraints(g, x, lbg, ubg, var_names)
+        bounds_str, binary_vars, general_vars = _build_bounds(var_names, lbx, ubx, discrete)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        p = getattr(self, "_gp_current_priority", None)
+        n = getattr(self, "_gp_n_priorities", 0)
+        priority_suffix = f"_priority_{p}" if p is not None and n > 1 else ""
+        filename = f"{self.__class__.__name__}_{timestamp}{priority_suffix}.lp"
+
+        _write_lp_file(
+            filename,
+            obj_str,
+            constr_str,
+            bounds_str,
+            binary_vars,
+            general_vars,
+            output_folder=self._output_folder,
+        )
+
     def solver_options(self):
         options = super().solver_options()
 
@@ -2073,6 +2165,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Set the option in both cases, to avoid one inadvertently remaining in the cache.
         options[solver]["jac_c_constant"] = "yes" if self.linear_collocation else "no"
+
+        options.setdefault("export_lp", False)
         return options
 
     def integrator_options(self):
