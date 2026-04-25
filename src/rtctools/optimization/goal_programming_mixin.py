@@ -11,8 +11,10 @@ from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
 from .goal_programming_mixin_base import (  # noqa: F401
     Goal,
     StateGoal,
+    _ConstraintTuple,
     _EmptyEnsembleList,
     _EmptyEnsembleOrderedDict,
+    _goal_constraint_name,
     _GoalConstraint,
     _GoalProgrammingMixinBase,
 )
@@ -182,7 +184,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         )
 
         for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return constraints
 
@@ -196,7 +201,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         )
 
         for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
+            name = _goal_constraint_name(constraint)
+            path_constraints.append(
+                _ConstraintTuple((constraint.function(self), constraint.min, constraint.max, name))
+            )
 
         return path_constraints
 
@@ -611,13 +619,18 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         options = self.goal_programming_options()
 
+        pareto_name = f"pareto_p{self._gp_current_priority}"
         if options["fix_minimized_values"]:
-            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True)
+            constraint = _GoalConstraint(
+                None, _constraint_func, obj_val, obj_val, True, pareto_name
+            )
             self.check_collocation_linearity = False
             self.linear_collocation = False
         else:
             obj_val += options["constraint_relaxation"]
-            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True)
+            constraint = _GoalConstraint(
+                None, _constraint_func, -np.inf, obj_val, True, pareto_name
+            )
 
         # The goal works over all ensemble members, so we add it to the last
         # one, as at that point the inputs of all previous ensemble members
@@ -691,8 +704,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         self.__results_are_current = False
         self.__original_constant_input_keys = {}
         self.__original_parameter_keys = {}
+        self._gp_n_priorities = len(subproblems)
         for i, (priority, goals, path_goals) in enumerate(subproblems):
             logger.info(f"Solving goals at priority {priority}")
+            self._gp_current_priority = priority
 
             # Call the pre priority hook
             self.priority_started(priority)
