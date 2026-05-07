@@ -728,3 +728,46 @@ class TestModelicaMixinEnsembleSpecificBounds(TestCase):
         bounds_member_1 = self.problem.bounds(1)
         expected_u_bounds_member_1 = (-2.0, 0.5)
         self.assertEqual(bounds_member_1["u"], expected_u_bounds_member_1)
+
+
+class ModelSIUnits(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
+    def __init__(self):
+        super().__init__(
+            input_folder=data_path(),
+            output_folder=data_path(),
+            model_name="ModelSIUnits",
+            model_folder=data_path(),
+        )
+
+    def times(self, variable=None):
+        return np.linspace(0.0, 1.0, 21)
+
+    def bounds(self):
+        return {"u": (-2.0, 2.0)}
+
+    def objective(self, ensemble_member):
+        return self.integral("u")
+
+    def compiler_options(self):
+        compiler_options = super().compiler_options()
+        compiler_options["cache"] = False
+        # NOTE: Do NOT set library_folders = [] here.
+        # This exercises the entry-point-based standard library discovery.
+        return compiler_options
+
+
+class TestModelicaMixinSIUnits(TestCase, unittest.TestCase):
+    def test_load_model_with_si_units(self):
+        """Test that a model using Modelica.Units.SI types can be loaded.
+
+        This test deliberately does NOT set library_folders = [] so that
+        it exercises the entry-point-based standard library discovery.
+        """
+        problem = ModelSIUnits()
+        problem.optimize()
+        results = problem.extract_results()
+        self.assertAlmostEqual(
+            results["q"] + results["u"],
+            np.ones(len(problem.times())) * 1.0,
+            1e-6,
+        )
