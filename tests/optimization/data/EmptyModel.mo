@@ -1,0 +1,2 @@
+model EmptyModel
+end EmptyModel;
