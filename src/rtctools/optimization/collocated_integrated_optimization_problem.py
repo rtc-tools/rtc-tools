@@ -1053,8 +1053,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         offset = 2 * (len(collocated_variables) + len(self.dae_variables["constant_inputs"]))
         collocation_time_0 = accumulated_U[offset + 0]
         collocation_time_1 = accumulated_U[offset + 1]
-        path_variables_1 = accumulated_U[offset + 2 : offset + 2 + len(self.path_variables)]
-        extra_constant_inputs_1 = accumulated_U[offset + 2 + len(self.path_variables) :]
+        path_variables_1 = accumulated_U[offset + 2 : offset + 2 + path_variables_size]
+        extra_constant_inputs_1 = accumulated_U[offset + 2 + path_variables_size :]
 
         # Approximate derivatives using backwards finite differences
         dt = collocation_time_1 - collocation_time_0
@@ -1736,8 +1736,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                                 ca.transpose(history_derivatives[i, :]),
                                 ca.transpose(constant_input_values[i, :]),
                                 time,
-                                ca.repmat(np.nan, len(self.path_variables)),
-                                ca.repmat(np.nan, len(self.__extra_constant_inputs)),
+                                ca.repmat(np.nan, path_variables_size),
+                                ca.repmat(np.nan, extra_constant_inputs_size),
                             ),
                             ca.repmat(np.nan, extra_variables_size),
                         ]
