@@ -26,6 +26,29 @@ def _resolve_folder(kwargs, base_folder, subfolder_kw, default):
         return os.path.join(base_folder, subfolder)
 
 
+def _configure_extra_casadi_path(logger):
+    """Prepend RTCTOOLS_EXTRA_CASADIPATH to CasADi's plugin search path."""
+    if extra_casadi_path := os.getenv("RTCTOOLS_EXTRA_CASADIPATH", "").strip():
+        current_path = casadi.GlobalOptions.getCasadiPath()
+        current_parts = current_path.split(os.pathsep) if current_path else []
+        seen = {os.path.normcase(os.path.normpath(p)) for p in current_parts}
+        new_parts = []
+        for p in extra_casadi_path.split(os.pathsep):
+            norm = os.path.normcase(os.path.normpath(p))
+            if norm not in seen:
+                seen.add(norm)
+                new_parts.append(p)
+                if not os.path.isdir(norm):
+                    logger.warning(
+                        f"RTCTOOLS_EXTRA_CASADIPATH entry {p!r} does not exist"
+                        " or is not a directory."
+                    )
+        if new_parts:
+            combined = os.pathsep.join(new_parts + current_parts)
+            logger.debug(f"Setting CasADi plugin search path to '{combined}'.")
+            casadi.GlobalOptions.setCasadiPath(combined)
+
+
 def run_optimization_problem(
     optimization_problem_class, base_folder="..", log_level=logging.INFO, profile=False, **kwargs
 ):
@@ -99,6 +122,8 @@ def run_optimization_problem(
     # Log version info
     logger.info(f"Using RTC-Tools {__version__}.")
     logger.debug(f"Using CasADi {casadi.__version__}.")
+
+    _configure_extra_casadi_path(logger)
 
     # Check for some common mistakes in inheritance order
     suggested_order = OrderedSet(
@@ -231,6 +256,8 @@ def run_simulation_problem(
 
     logger.info(f"Using RTC-Tools {__version__}")
     logger.debug(f"Using CasADi {casadi.__version__}.")
+
+    _configure_extra_casadi_path(logger)
 
     # Run
     prob = simulation_problem_class(
