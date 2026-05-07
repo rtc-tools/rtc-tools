@@ -1932,6 +1932,13 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 for i, (g_i, lbg_i, ubg_i) in enumerate(
                     zip(g_constraint, lbg_constraint, ubg_constraint, strict=True)
                 ):
+                    if isinstance(g_i, (int, float, np.generic)):
+                        raise ValueError(
+                            f"Constraint #{i} expression is a plain Python or NumPy scalar "
+                            f"({type(g_i).__name__}). Constraint expressions must be CasADi "
+                            f"symbolic expressions. If this resulted from a symbolic "
+                            f"simplification, wrap it explicitly using ca.MX(value)."
+                        )
                     s = g_i.size1()
                     if s > 1:
                         if not isinstance(lbg_i, np.ndarray) or lbg_i.shape[0] == 1:
