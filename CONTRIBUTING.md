@@ -10,7 +10,6 @@
 - [Commits and Commit Messages](#commits-and-commit-messages)
 - [Code Quality Guidelines](#code-quality-guidelines)
 - [Setting up a Development Environment](#setting-up-a-development-environment)
-- [Building the Documentation](#building-the-documentation)
 - [Project Governance](#project-governance)
 - [Licensing and Developer Certificate of Origin](#licensing-and-developer-certificate-of-origin-dco)
 - [Contact](#contact)
@@ -137,7 +136,7 @@ To maintain a high standard of code quality in RTC-Tools, please follow these gu
   x: Optional[str]
   ```
 - **Docstrings**: Add clear and concise docstrings to all public modules, classes, functions, and methods. Use [PEP 257](https://peps.python.org/pep-0257/) conventions.
-- **Pre-commit Hooks**: Use the provided pre-commit configuration to automatically check formatting and linting before each commit. See [Setting up a Development Environment](#setting-up-a-development-environment) for setup instructions.
+- **Pre-commit Hooks**: Use the provided pre-commit configuration by running `pre-commit install` to automatically check formatting and linting before each commit.
 - **Follow PEP 8**: Write Python code that adheres to [PEP 8](https://peps.python.org/pep-0008/) style guidelines.
 - **Code coverage**: Aim for good test coverage to ensure code quality and prevent regressions.
 - **Avoid Code Duplication**: Reuse existing utilities and functions where possible. Refactor code to eliminate duplication.
@@ -154,7 +153,6 @@ To set up your development environment, you will need:
 
 - Python 3.10 or higher (up to 3.14)
 - Git
-- uv: see the [official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 You can clone the repository and install it from source:
 
@@ -167,39 +165,30 @@ uv sync
 This installs the package along with all development dependencies (testing, linting, documentation tools).
 
 To ensure that your code meets our standards, we recommend using pre-commit.
-Run the following command once to set up the pre-commit hook:
+Run the following command to set up the pre-commit hook:
 
 ```bash
-uv run pre-commit install
+pre-commit install
 ```
 
-This registers the hook in `.git/hooks/` so checks run automatically before each commit.
-
-To run the checks manually (e.g. before pushing):
-
-```bash
-uv run pre-commit run --all-files
-```
+This will automatically check your code for formatting and linting issues before each commit.
 
 
 To run the tests:
 
 ```bash
-uv run pytest tests
+pytest tests
 ```
 
-## Building the Documentation
-
-The public documentation is hosted on [rtc-tools.readthedocs.io](https://rtc-tools.readthedocs.io). It is built automatically from this repository: `latest` tracks the `master` branch, and `stable` corresponds to the latest release. The source files are in the `doc/` folder.
-
-To build the documentation locally, run these commands from the repository root. The `uv sync --group docs` command installs the documentation-specific dependencies (e.g. Sphinx) in addition to the default ones:
+To build the documentation, the required dependencies are in the `docs` dependency group from `pyproject.toml`.
+Run these commands from the repository root:
 
 ```bash
 uv sync --group docs
 uv run sphinx-build -b html doc doc/_build/html
 ```
 
-The built HTML pages will be in `doc/_build/html/`. Open `doc/_build/html/index.html` in a browser to view them.
+The built HTML pages will be in `doc/_build/html/`.
 
 ## Project Governance
 

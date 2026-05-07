@@ -14,6 +14,26 @@ from .timeseries import Timeseries
 logger = logging.getLogger("rtctools")
 
 
+class _ConstraintTuple(tuple):
+    """A tuple subclass for constraint tuples ``(expr, lb, ub[, name])``.
+
+    Iterates as a 3-tuple so that ``f, lb, ub = constraint`` continues to work
+    in user subclasses. The optional name is accessible via ``.name`` or ``c[3]``.
+    Note: ``len()`` reflects the true length (3 or 4); only iteration is truncated.
+    Slicing (e.g. ``c[:3]``, ``c[:]``) returns a plain ``tuple`` and loses the type
+    and the ``.name`` property — use integer indexing or ``.name`` to access elements
+    safely.
+    """
+
+    def __iter__(self):
+        return iter(super().__getitem__(slice(3)))
+
+    @property
+    def name(self) -> str | None:
+        """The constraint name, or ``None`` if not set."""
+        return super().__getitem__(3) if len(self) == 4 else None
+
+
 class _EmptyEnsembleList(list):
     """
     An indexable object containing infinitely many empty lists.
@@ -454,6 +474,7 @@ class _GoalConstraint:
         m: float | np.ndarray | Timeseries,
         M: float | np.ndarray | Timeseries,
         optimized: bool,
+        name: str | None = None,
     ):
         assert isinstance(m, (float, np.ndarray, Timeseries))
         assert isinstance(M, (float, np.ndarray, Timeseries))
@@ -469,6 +490,7 @@ class _GoalConstraint:
         self.min = m
         self.max = M
         self.optimized = optimized
+        self.name = name
 
     def update_bounds(self, other, enforce="self"):
         # NOTE: a.update_bounds(b) is _not_ the same as  b.update_bounds(a).
@@ -511,7 +533,31 @@ class _GoalConstraint:
             self.max = max_
 
 
+def _goal_constraint_name(constraint: "_GoalConstraint") -> str:
+    """Return a human-readable LP constraint name derived from the goal class and priority.
+
+    Used when emitting 4-tuple constraints from goal programming mixins so that exported
+    LP files identify which goal each epsilon/tightening constraint belongs to.
+
+    For internal constraints without an associated goal (e.g., epsilon-tightening constraints
+    used by ``fix_minimized_values``), a generic ``"goal_constraint"`` fallback name is
+    returned. Duplicate names are deduplicated in ``transcribe()`` by appending ``_d0``,
+    ``_d1``, etc., so the resulting LP file always has unique constraint labels.
+    """
+    if constraint.name is not None:
+        return constraint.name
+    goal = constraint.goal
+    if goal is None:
+        return "goal_constraint"
+    return f"{goal.__class__.__name__}_p{goal.priority}"
+
+
 class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._gp_current_priority = None  # Set to the active priority during optimize()
+        self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
+
     def _gp_n_objectives(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
         return (
             ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
