@@ -86,9 +86,6 @@ jobs:
       TOXENV: coverage
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-      with:
-        # Full history required for accurate Sonar SCM blame data
-        fetch-depth: 0
     - uses: ./.github/actions/setup-python
       with:
         dependency-groups: "tests"
@@ -100,10 +97,21 @@ jobs:
         name: coverage-report
         retention-days: 7
         path: coverage.xml
+
+  sonar:
+    needs: [coverage]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      with:
+        fetch-depth: 0
+    - name: Download coverage report
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+      with:
+        name: coverage-report
     - name: SonarQube Cloud Scan
-      if: ${{ success() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
-      continue-on-error: true
       uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432  # v8.0.0
+      continue-on-error: true
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
