@@ -114,17 +114,15 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
     def constraints(self, ensemble_member):
         constraints = super().constraints(ensemble_member)
 
-        for constraint in self.__problem_constraints[ensemble_member]:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints += self._gp_build_constraint_list(self.__problem_constraints[ensemble_member])
         return constraints
 
     def path_constraints(self, ensemble_member):
         path_constraints = super().path_constraints(ensemble_member)
 
-        for constraint in self.__problem_path_constraints[ensemble_member]:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints += self._gp_build_constraint_list(
+            self.__problem_path_constraints[ensemble_member]
+        )
         return path_constraints
 
     def __validate_goals(self, goals, is_path_goal):
@@ -197,8 +195,17 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
                 _pos = functools.partial(_constraint_func, sign=1)
                 _neg = functools.partial(_constraint_func, sign=-1)
 
-                constraints[ensemble_member].append(_GoalConstraint(None, _pos, 0.0, np.inf, False))
-                constraints[ensemble_member].append(_GoalConstraint(None, _neg, 0.0, np.inf, False))
+                goal_constr_base_name = f"{goal.__class__.__name__}_p{goal.priority}"
+                constraints[ensemble_member].append(
+                    _GoalConstraint(
+                        None, _pos, 0.0, np.inf, False, f"{goal_constr_base_name}_abs_pos"
+                    )
+                )
+                constraints[ensemble_member].append(
+                    _GoalConstraint(
+                        None, _neg, 0.0, np.inf, False, f"{goal_constr_base_name}_abs_neg"
+                    )
+                )
 
             # Overwrite the original goal, such that it is just a minimization
             # of the additional variable.
