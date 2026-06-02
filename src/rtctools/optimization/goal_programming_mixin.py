@@ -691,8 +691,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         self.__results_are_current = False
         self.__original_constant_input_keys = {}
         self.__original_parameter_keys = {}
+        self._gp_n_priorities = len(subproblems)
         for i, (priority, goals, path_goals) in enumerate(subproblems):
             logger.info(f"Solving goals at priority {priority}")
+            self._gp_current_priority = priority
 
             # Call the pre priority hook
             self.priority_started(priority)
