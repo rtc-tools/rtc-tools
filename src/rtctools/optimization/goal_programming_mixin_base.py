@@ -396,9 +396,9 @@ class StateGoal(Goal):
         if self.has_target_bounds:
             try:
                 if optimization_problem.ensemble_specific_bounds:
-                    bounds = optimization_problem.bounds(0)
-                    bounds_state_ref = bounds[self.state]
                     if np.array_equal(self.function_range, (np.nan, np.nan), equal_nan=True):
+                        bounds = optimization_problem.bounds(0)
+                        bounds_state_ref = bounds[self.state]
                         # If the user has not set the function range themselves, we
                         # try and set it automatically. This is only possible if the
                         # bounds are the same for all ensemble members.
@@ -406,10 +406,8 @@ class StateGoal(Goal):
                             bounds_state_ensemble = optimization_problem.bounds(ensemble_member)[
                                 self.state
                             ]
-                            # First, check if the types are equal, and then check if the values are
-                            # equal. For Timeseries and floats, we can do `==` comparison, for
-                            # arrays we need to use np.all. To simplify we wrap the `==` for floats
-                            # in an `np.all` as well.
+                            # np.all(a == b) works for all bound types: tuples and arrays return
+                            # element-wise booleans; Timeseries.__eq__ returns a single bool.
                             if type(bounds_state_ref) is not type(
                                 bounds_state_ensemble
                             ) or not np.all(bounds_state_ref == bounds_state_ensemble):
@@ -417,9 +415,11 @@ class StateGoal(Goal):
                                     f"Bounds for state {self.state} are not the same for all "
                                     f"ensemble members; please set the function_range explicitly"
                                 )
+                        self.function_range = bounds[self.state]
                 else:
-                    bounds = optimization_problem.bounds()
-                self.function_range = bounds[self.state]
+                    if np.array_equal(self.function_range, (np.nan, np.nan), equal_nan=True):
+                        bounds = optimization_problem.bounds()
+                        self.function_range = bounds[self.state]
             except KeyError:
                 raise Exception(f"State {self.state} has no bounds or does not exist in the model.")
 
@@ -653,7 +653,10 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                 pass
             elif goal.has_target_bounds:
                 if not np.all(np.isfinite(m)) or not np.all(np.isfinite(M)):
-                    raise Exception(f"No function range specified for goal {goal}")
+                    raise Exception(
+                        f"Could not determine a finite function_range for goal {goal}.\n"
+                        f"  Fix: set function_range explicitly, e.g. function_range = (min, max)."
+                    )
 
                 if np.any(m >= M):
                     raise Exception(f"Invalid function range for goal {goal}")
