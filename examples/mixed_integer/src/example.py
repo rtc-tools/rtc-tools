@@ -27,16 +27,21 @@ class Example(CSVMixin, ModelicaMixin, CollocatedIntegratedOptimizationProblem):
     def path_constraints(self, ensemble_member):
         # Call super to get default constraints
         constraints = super().path_constraints(ensemble_member)
-        M = 2  # The so-called "big-M"
 
+        M = 10.0  # Big M, maximum possible discharge through the orifice
         # Release through orifice downhill only. This constraint enforces the
         # fact that water only flows downhill.
         constraints.append(
-            (self.state("Q_orifice") + (1 - self.state("is_downhill")) * 10, 0.0, 10.0)
+            (self.state("Q_orifice") + (1 - self.state("is_downhill")) * M, 0.0, 10.0)
         )
+
+        # Pump upnhill only. This constraint enforces the
+        # fact that most pumps can only pump uphill.
+        constraints.append((self.state("Q_pump") + (self.state("is_downhill")) * M, 0.0, 10.0))
 
         # Make sure is_downhill is true only when the sea is lower than the
         # water level in the storage.
+        M = 2  # The so-called "big-M"
         constraints.append(
             (
                 self.state("H_sea")
