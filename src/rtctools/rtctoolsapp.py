@@ -1,12 +1,34 @@
 import importlib.resources
 import logging
 import os
+import re
 import shutil
 import sys
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import rtctools
+
+
+def _zipball_version(version: str) -> str:
+    """Return the nearest GitHub zipball version for an RTC-Tools version string."""
+
+    version = version.split("+", 1)[0]
+
+    match = re.match(
+        r"^(?P<base>\d+(?:\.\d+)*)(?:(?P<pre>a|b|rc)(?P<pre_num>\d+))?(?:\.post\d+)?(?:\.dev\d+)?$",
+        version,
+    )
+    if not match:
+        return version
+
+    release_version = match.group("base")
+    pre = match.group("pre")
+    if pre is not None:
+        release_version += f"{pre}{match.group('pre_num')}"
+
+    return release_version
+
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("rtctools")
@@ -72,7 +94,7 @@ def copy_libraries(*args):
         except OSError:
             sys.exit(f"Failed merging the libraries in package '{tld}'")
 
-    sys.exit(f"Succesfully copied all library folders to '{dst.resolve()}'")
+    sys.exit(f"Successfully copied all library folders to '{dst.resolve()}'")
 
 
 def download_examples(*args):
@@ -94,28 +116,50 @@ def download_examples(*args):
     from zipfile import ZipFile
 
     version = rtctools.__version__
+    release_version = _zipball_version(version)
+    if release_version != version:
+        logger.info(
+            f"Using RTC-Tools version {release_version} "
+            f"(resolved from {version}) to download examples."
+        )
+    else:
+        logger.info(f"Using RTC-Tools version {release_version} to download examples.")
+
+    local_filename = None
     try:
-        url = f"https://github.com/rtc-tools/rtc-tools/zipball/{version}"
+        url = f"https://github.com/rtc-tools/rtc-tools/zipball/{release_version}"
 
         opener = urllib.request.build_opener()
         urllib.request.install_opener(opener)
         # The security warning can be dismissed as the url variable is hardcoded to a remote.
         local_filename, _ = urllib.request.urlretrieve(url)  # nosec
     except HTTPError:
-        sys.exit(f"Could not found examples for RTC-Tools version {version}.")
-
-    with ZipFile(local_filename, "r") as z:
-        target = path / "rtc-tools-examples"
-        zip_folder_name = next(x for x in z.namelist() if x.startswith("Deltares-rtc-tools-"))
-        prefix = "{}/examples/".format(zip_folder_name.rstrip("/"))
-        members = [x for x in z.namelist() if x.startswith(prefix)]
-        z.extractall(members=members)
-        shutil.move(prefix, target)
-        shutil.rmtree(zip_folder_name)
-
-        sys.exit(f"Succesfully downloaded the RTC-Tools examples to '{target.resolve()}'")
+        sys.exit(f"Could not find examples for RTC-Tools version {release_version}.")
 
     try:
-        os.remove(local_filename)
-    except OSError:
-        pass
+        with ZipFile(local_filename, "r") as z:
+            import tempfile
+
+            target = path / "rtc-tools-examples"
+            zip_folder_name = next(
+                (name.split("/", 1)[0] for name in z.namelist() if name and "/" in name),
+                None,
+            )
+            if zip_folder_name is None:
+                sys.exit("Downloaded archive is malformed or empty.")
+
+            prefix = f"{zip_folder_name}/examples/"
+            members = [x for x in z.namelist() if x.startswith(prefix)]
+
+            with tempfile.TemporaryDirectory(dir=path) as extract_dir:
+                extract_dir = Path(extract_dir)
+                z.extractall(path=extract_dir, members=members)
+                shutil.move(str(extract_dir / zip_folder_name / "examples"), target)
+
+                sys.exit(f"Successfully downloaded the RTC-Tools examples to '{target.resolve()}'")
+    finally:
+        if local_filename is not None:
+            try:
+                os.remove(local_filename)
+            except OSError:
+                pass
