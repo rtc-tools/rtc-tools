@@ -5,9 +5,10 @@
 [![Pipeline](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml/badge.svg)](
     https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml
 )
+[![SonarCloud Alert Status](https://sonarcloud.io/api/project_badges/measure?project=rtc-tools_rtc-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rtc-tools_rtc-tools)
 [![Coverage](
-    https://sonarcloud.io/api/project_badges/measure?project=Deltares_rtc-tools&metric=coverage
-)](https://sonarcloud.io/summary/new_code?id=Deltares_rtc-tools)
+    https://sonarcloud.io/api/project_badges/measure?project=rtc-tools_rtc-tools&metric=coverage
+)](https://sonarcloud.io/summary/new_code?id=rtc-tools_rtc-tools)
 
 > **NOTE** The RTC-Tools repository has been migrated from GitLab to here;
 see [Migration from GitLab](#migration-from-gitlab).
