@@ -6,12 +6,12 @@ from importlib import metadata as importlib_metadata
 import casadi as ca
 import numpy as np
 import pymoca
-import pymoca.backends.casadi.api
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.caching import cached
 from rtctools._internal.casadi_helpers import substitute_in_external
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
+from rtctools._internal.pymoca_helpers import load_pymoca_model
 
 from .optimization_problem import OptimizationProblem
 from .timeseries import Timeseries
@@ -51,19 +51,9 @@ class ModelicaMixin(OptimizationProblem):
 
         compiler_options = self.compiler_options()
         logger.info(f"Loading/compiling model {model_name}.")
-        try:
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
-        except (RuntimeError, ModuleNotFoundError) as error:
-            if not compiler_options.get("cache", False):
-                raise error
-            compiler_options["cache"] = False
-            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
-            logger.info(f"Compiling model {model_name}.")
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
+        self.__pymoca_model = load_pymoca_model(
+            kwargs["model_folder"], model_name, compiler_options, logger
+        )
 
         # Extract the CasADi MX variables used in the model
         self.__mx = {}

@@ -9,11 +9,11 @@ from importlib import metadata as importlib_metadata
 import casadi as ca
 import numpy as np
 import pymoca
-import pymoca.backends.casadi.api
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.caching import cached
 from rtctools._internal.debug_check_helpers import DebugLevel
+from rtctools._internal.pymoca_helpers import load_pymoca_model
 from rtctools.data.storage import DataStoreAccessor
 
 logger = logging.getLogger("rtctools")
@@ -84,19 +84,9 @@ class SimulationProblem(DataStoreAccessor):
         # Load model from pymoca backend
         compiler_options = self.compiler_options()
         logger.info(f"Loading/compiling model {model_name}.")
-        try:
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
-        except RuntimeError as error:
-            if compiler_options.get("cache", False):
-                raise error
-            compiler_options["cache"] = False
-            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
-            logger.info(f"Compiling model {model_name}.")
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
+        self.__pymoca_model = load_pymoca_model(
+            kwargs["model_folder"], model_name, compiler_options, logger
+        )
 
         # Extract the CasADi MX variables used in the model
         self.__mx = {}
@@ -1164,7 +1154,7 @@ class SimulationProblem(DataStoreAccessor):
         NOTE: Due to backwards compatibility for allowing parameters to be set
         with set_var() instead of overriding parameters(), this method can
         return a symbolic value for nominals defined in the Modelica file. It
-        can only do so until the initializion() method in this class is
+        can only do so until the initialize() method in this class is
         called/completed, after which it will return numeric values only.
         """
         return self.__nominals.get(variable, 1.0)
@@ -1194,7 +1184,7 @@ class SimulationProblem(DataStoreAccessor):
                 pass
             else:
                 if logger.getEffectiveLevel() == logging.DEBUG:
-                    logger.debug(f"Read intial state for {variable}")
+                    logger.debug(f"Read initial state for {variable}")
 
         return initial_state_dict
 
