@@ -11,7 +11,6 @@
 [![Python](https://img.shields.io/pypi/pyversions/rtc-tools)](https://pypi.org/project/rtc-tools/)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![LFX Health Score](https://insights.linuxfoundation.org/api/badge/health-score?project=rtc-tools)](https://insights.linuxfoundation.org/project/rtc-tools)
->>>>>>> 00d5f4d (docs(readme): add TeamCity, PyPI, LFX Health Score, and license badges)
 
 > **NOTE** The RTC-Tools repository has been migrated from GitLab to here;
 see [Migration from GitLab](#migration-from-gitlab).
