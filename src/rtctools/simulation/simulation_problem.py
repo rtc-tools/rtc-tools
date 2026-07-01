@@ -510,7 +510,8 @@ class SimulationProblem(DataStoreAccessor):
             else:
                 if numeric_start_val == 0.0:  # NOSONAR - safe comparison due to settings above
                     logger.info(
-                        f"Initialize: {var_name} will be set to zero as no start value was found.")
+                        f"Initialize: {var_name} will be set to zero as no start value was found."
+                    )
                 # minimize residual
                 minimized_residuals.append((var.symbol - start_expr) / var_nominal)
 
