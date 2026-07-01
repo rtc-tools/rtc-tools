@@ -1,5 +1,4 @@
 import logging
-import warnings
 from abc import ABCMeta, abstractmethod, abstractproperty
 from typing import Any, Literal, overload
 
@@ -96,41 +95,25 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Create an NLP solver
         logger.debug("Collecting solver options")
 
-        # Set __mixed_integer from the returned discrete array so that solver_options()
-        # selects the correct solver (ipopt vs bonmin) for all transcribe() implementations.
         self.__mixed_integer = np.any(discrete)
         options = {}
         options.update(self.solver_options())  # Create a copy
 
-        expand = options.pop("expand", False)
-        # export_lp is an output directive read from export_options(); guard against it
-        # being misplaced in solver_options(), where it would leak to the solver. Warn on
-        # the key's presence (any value) and remove it so it never reaches the solver.
-        if "export_lp" in options:
-            del options["export_lp"]
-            warnings.warn(
-                "'export_lp' was set in solver_options(); it is ignored there. "
-                "Set it in export_options() instead. It is an output directive and "
-                "must not be passed to the solver.",
-                UserWarning,
-                stacklevel=2,
-            )
-        # Use .get(): an empty export_options() is a valid "no directives" override.
-        export_lp = self.export_options().get("export_lp", False)
-        if expand or export_lp:
+        logger.debug("Creating solver")
+
+        if options.pop("expand", False):
             # NOTE: CasADi only supports the "expand" option for nlpsol. To
             # also be able to expand with e.g. qpsol, we do the expansion
-            # ourselves here. Expansion is also required for LP export.
+            # ourselves here.
             logger.debug("Expanding objective and constraints to SX")
 
-            f_sx, g_sx, x_sx = self._expand_nlp(nlp)
+            expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
+            X_sx = ca.SX.sym("X", *nlp["x"].shape)
+            f_sx, g_sx = expand_f_g(X_sx)
 
             nlp["f"] = f_sx
             nlp["g"] = g_sx
-            nlp["x"] = x_sx
-
-            if export_lp:
-                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete)
+            nlp["x"] = X_sx
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -239,42 +222,6 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         return success
 
-    def _export_lp_file(
-        self,
-        f: ca.SX,
-        g: ca.SX,
-        x: ca.SX,
-        lbg: list,
-        ubg: list,
-        lbx: list,
-        ubx: list,
-        discrete: list[bool],
-    ) -> None:
-        """Export the transcribed LP/MILP problem as a file.
-
-        Called by :meth:`optimize` when ``export_lp`` is requested via :meth:`export_options`.
-        The base implementation raises :exc:`NotImplementedError`; subclasses that support LP
-        export override this method and use :attr:`_collint_variable_indices_as_lists` to map
-        variable names to solver vector indices. See
-        :class:`~rtctools.optimization.collocated_integrated_optimization_problem.CollocatedIntegratedOptimizationProblem`
-        """
-        raise NotImplementedError(
-            "LP/MILP export is only supported for "
-            "CollocatedIntegratedOptimizationProblem subclasses."
-        )
-
-    @staticmethod
-    def _expand_nlp(nlp: dict[str, ca.MX]) -> tuple[ca.SX, ca.SX, ca.SX]:
-        """Expand the MX NLP to SX form and return (f_sx, g_sx, x_sx).
-
-        Used when ``expand=True`` is set in solver options, or when ``export_lp=True``
-        is set in :meth:`export_options`.
-        """
-        expand_f_g = ca.Function("f_g", [nlp["x"]], [nlp["f"], nlp["g"]]).expand()
-        x_sx = ca.SX.sym("x", *nlp["x"].shape)
-        f_sx, g_sx = expand_f_g(x_sx)
-        return f_sx, g_sx, x_sx
-
     def __check_bounds_control_input(self) -> None:
         # Checks if at the control inputs have bounds, log warning when a control input is not
         # bounded.
@@ -321,11 +268,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
         """
-        options = {
-            "error_on_fail": False,
-            "optimized_num_dir": 3,
-            "casadi_solver": ca.nlpsol,
-        }
+        options = {"error_on_fail": False, "optimized_num_dir": 3, "casadi_solver": ca.nlpsol}
 
         if self.__mixed_integer:
             options["solver"] = "bonmin"
@@ -341,27 +284,6 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             ipopt_options = options["ipopt"] = {}
             ipopt_options["linear_solver"] = "mumps"
         return options
-
-    def export_options(self) -> dict[str, bool]:
-        """
-        Returns a dictionary of RTC-Tools output directives that control file export.
-
-        Unlike :meth:`solver_options`, these directives are consumed by RTC-Tools
-        itself and are **never** passed to the solver. They are kept separate from
-        the solver options so that code which forwards ``solver_options()`` straight
-        to a CasADi solver (e.g. subproblem solves in downstream mixins) is not
-        affected by export directives.
-
-        Supported directives:
-
-        * ``export_lp`` (:class:`bool`, default ``False``): Export the transcribed
-          problem as an LP/MILP file to the output folder. Only supported for
-          CollocatedIntegratedOptimizationProblem subclasses; see :meth:`_export_lp_file`
-          for the file naming, MILP handling, and the conditions under which it raises.
-
-        :returns: A dictionary of export directives.
-        """
-        return {"export_lp": False}
 
     def solver_success(
         self, solver_stats: dict[str, str | bool], log_solver_failure_as_error: bool
