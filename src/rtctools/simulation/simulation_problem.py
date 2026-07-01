@@ -508,6 +508,10 @@ class SimulationProblem(DataStoreAccessor):
                 var.min = start_expr
                 var.max = start_expr
             else:
+                if numeric_start_val == 0.0:
+                    logger.info(
+                        f"Initialize: {var_name} will set to zero as no start value was found"
+                    )
                 # minimize residual
                 minimized_residuals.append((var.symbol - start_expr) / var_nominal)
 
