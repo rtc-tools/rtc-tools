@@ -136,7 +136,10 @@ class Example(
         # We want to show that the results of our highest priority goal (water
         # level) are remembered. The other information we want to see is how our
         # lower priority goal (Q_pump) progresses. We can write some code that
-        # sumerizes the results and stores it.
+        # summarizes the results and stores it.
+
+        # Call super() class to not overwrite default behaviour
+        super().priority_completed(priority)
 
         # A little bit of tolerance when checking for acceptance, because
         # strictly speaking 0.4299... is smaller than 0.43.
