@@ -134,6 +134,7 @@ To maintain a high standard of code quality in RTC-Tools, please follow these gu
   instead of:
   ```python
   from typing import Optional
+
   x: Optional[str]
   ```
 - **Docstrings**: Add clear and concise docstrings to all public modules, classes, functions, and methods. Use [PEP 257](https://peps.python.org/pep-0257/) conventions.

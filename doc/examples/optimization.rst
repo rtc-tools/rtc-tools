@@ -1,3 +1,5 @@
+.. _Optimization examples:
+
 Optimization examples
 =====================
 

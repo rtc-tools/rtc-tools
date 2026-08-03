@@ -86,6 +86,7 @@ Contents
    getting-started
    optimization
    simulation
+   time-series
    examples
    related-projects
 

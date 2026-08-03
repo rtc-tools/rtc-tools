@@ -37,7 +37,12 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
+    "sphinxcontrib.bibtex",
 ]
+
+bibtex_bibfiles = ["literature.bib"]
+bibtex_encoding = "latin"
+bibtex_default_style = "unsrt"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]

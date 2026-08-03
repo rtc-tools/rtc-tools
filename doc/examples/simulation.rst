@@ -1,3 +1,5 @@
+.. _Simulation examples:
+
 Simulation examples
 =====================
 
