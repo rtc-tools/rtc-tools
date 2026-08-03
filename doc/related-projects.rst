@@ -7,7 +7,7 @@ The following modeling libraries are available (this list is non-exhaustive):
 Water Systems
 -------------
 
-`RTC-Tools Channel Flow <https://github.com/Deltares/rtc-tools-channel-flow>`_
+`RTC-Tools Channel Flow <https://rtc-tools-channel-flow.readthedocs.io/>`_
     Hydraulic channel flow and water level dynamics.
 
 `RTC-Tools Hydraulic Structures <https://rtc-tools-hydraulic-structures.readthedocs.io/en/latest/>`_
@@ -15,6 +15,9 @@ Water Systems
 
 `RTC-Tools Simulation <https://rtc-tools-simulation.readthedocs.io/en/latest/>`_
     Reservoir and system simulation workflows.
+
+`Pump fitting tool <https://pump-fitting-tools.readthedocs.io/en/latest/>`_
+    Generate the input to an RTC-Tools pump model.
 
 Multi-Energy Systems
 --------------------
