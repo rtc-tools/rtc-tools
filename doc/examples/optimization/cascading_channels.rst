@@ -44,8 +44,7 @@ removed):
     Modellers should take care to set proper values for the initial
     derivatives, in order to avoid spurious waves at the start of the
     optimization run. In this example we assume a steady state initial
-    condition for all states except those acted upon by the PID
-    controllers.
+    condition for all states.
 
 The Optimization Problem
 ------------------------
