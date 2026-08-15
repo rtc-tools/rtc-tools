@@ -1,5 +1,6 @@
 import logging
 
+import casadi as ca
 import numpy as np
 
 from rtctools.optimization.collocated_integrated_optimization_problem import (
@@ -45,6 +46,33 @@ class PathGoal2(Goal):
     function_range = (-1e1, 1e1)
     priority = 2
     target_max = Timeseries(np.linspace(0.0, 1.0, 21), 21 * [1.0])
+
+
+class VectorPathGoal(Goal):
+    """2D vector path goal to test multi-dimensional epsilon seeding."""
+
+    def function(self, optimization_problem, ensemble_member):
+        return ca.vertcat(optimization_problem.state("x"), optimization_problem.state("x") * 2)
+
+    size = 2
+    function_range = (-1e1, 1e1)
+    priority = 1
+    target_max = np.array([1.0, 2.0])
+    order = 1
+
+
+class VectorGoal(Goal):
+    """3D regular vector goal to test multi-dimensional epsilon seeding for non-path goals."""
+
+    def function(self, optimization_problem, ensemble_member):
+        x_at_05 = optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+        return ca.vertcat(x_at_05, x_at_05 * 2, x_at_05 * 3)
+
+    size = 3
+    function_range = (-1e1, 1e1)
+    priority = 1
+    target_min = np.array([0.0, 0.0, 0.0])
+    order = 1
 
 
 class GoalMinU(MinAbsStateGoal):
@@ -107,11 +135,17 @@ class ModelPathGoals:
         options["casadi_solver"] = "qpsol"
         return options
 
+    def goals(self):
+        goals = super().goals().copy()
+        goals.append(VectorGoal())
+        return goals
+
     def path_goals(self):
         goals = super().path_goals().copy()
 
         goals.append(PathGoal1())
         goals.append(PathGoal2())
+        goals.append(VectorPathGoal())
 
         return goals
 
@@ -226,13 +260,23 @@ class TestSinglePassGoalProgramming(TestCase):
     def test_initial_seed(self):
         """
         Every goal's epsilon variable should be present in the initial seed, and
-        should be set to one.
+        should be set to one (scalar or vector of ones).
         """
         n_goals = len(self.problem_append.path_goals()) + len(self.problem_append.goals())
         self.assertEqual(len(self.problem_append._initial_seed.keys()), n_goals)
 
-        for ts in self.problem_append._initial_seed.values():
-            np.testing.assert_equal(ts.values, 1.0)
+        for key, value in self.problem_append._initial_seed.items():
+            # Handle both regular epsilons and path epsilons (Timeseries)
+            if isinstance(value, Timeseries):
+                # Path epsilon: check the .values attribute
+                np.testing.assert_array_equal(
+                    value.values, 1.0, err_msg=f"Path epsilon {key} should be seeded with ones"
+                )
+            else:
+                # Regular epsilon: scalar or vector
+                np.testing.assert_array_equal(
+                    value, 1.0, err_msg=f"Regular epsilon {key} should be seeded with ones"
+                )
 
 
 class ModelSinglePassGoalProgrammingCachingQPSol(ModelSinglePassGoalProgrammingAppend):
