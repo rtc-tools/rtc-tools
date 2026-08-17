@@ -2,15 +2,12 @@
   <img src="doc/images/rtc-tools-horizontal-color.svg" alt="RTC-Tools logo" width="70%">
 </p>
 
-[![Pipeline](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml)
-[![TeamCity](https://dpcbuild.deltares.nl/app/rest/builds/buildType:RTCT_RtcTools2_RtcToolsFullModelTests/statusIcon.svg)](https://dpcbuild.deltares.nl/buildConfiguration/RTCT_RtcTools2_RtcToolsFullModelTests)
-[![SonarCloud Alert Status](https://sonarcloud.io/api/project_badges/measure?project=rtc-tools_rtc-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rtc-tools_rtc-tools)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rtc-tools_rtc-tools&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rtc-tools_rtc-tools)
-[![PyPI](https://img.shields.io/pypi/v/rtc-tools)](https://pypi.org/project/rtc-tools/)
-[![PyPI Downloads](https://static.pepy.tech/badge/rtc-tools/month)](https://pepy.tech/project/rtc-tools)
-[![Python](https://img.shields.io/pypi/pyversions/rtc-tools)](https://pypi.org/project/rtc-tools/)
-[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
-[![LFX Health Score](https://insights.linuxfoundation.org/api/badge/health-score?project=rtc-tools)](https://insights.linuxfoundation.org/project/rtc-tools)
+[![Pipeline](https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml/badge.svg)](
+    https://github.com/rtc-tools/rtc-tools/actions/workflows/ci.yml
+)
+[![Coverage](
+    https://sonarcloud.io/api/project_badges/measure?project=Deltares_rtc-tools&metric=coverage
+)](https://sonarcloud.io/summary/new_code?id=Deltares_rtc-tools)
 
 > **NOTE** The RTC-Tools repository has been migrated from GitLab to here;
 see [Migration from GitLab](#migration-from-gitlab).
