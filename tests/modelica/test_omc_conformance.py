@@ -81,6 +81,24 @@ EXAMPLE_MODELS = [
     Model("basic/Example"),
     Model("cascading_channels/Example", fails_check=CHECK_DELTARES_MAX),
     Model("channel_pulse/Example", fails_check=CHECK_DELTARES_MAX),
+    # T0 is a library parameter with no value, and the model does not bind it.
+    Model(
+        "channel_routings/Example",
+        fails_translate=r"Parameter Channel\.T0 has neither value nor start value",
+    ),
+    Model("channel_routings/ExampleFullSV", fails_check=CHECK_DELTARES_MAX),
+    # No equation for V, Q_spill and Q_turbine, which Branches.ID gets from Internal.Reservoir.
+    Model(
+        "channel_routings/ExampleID",
+        fails_translate=TRANSLATE_UNDER_DETERMINED,
+        warns=WARNING_NO_EQUATION_LEFT,
+    ),
+    # The IDZ branch sets H(min = H_b_down) on an array (rtc-tools-channel-flow).
+    Model(
+        "channel_routings/ExampleIDZ",
+        fails_check=r"Non-array modification 'Channel\.H_b_down' for array component 'min'",
+    ),
+    Model("channel_routings/ExampleLinear", fails_check=CHECK_DELTARES_MAX),
     Model("channel_wave_damping/ExampleOptimization", fails_check=CHECK_DELTARES_MAX),
     Model("channel_wave_damping/ExampleLocalControl", fails_check=CHECK_DELTARES_MAX),
     Model("ensemble/Example"),
