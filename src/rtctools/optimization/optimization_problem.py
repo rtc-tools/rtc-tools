@@ -699,17 +699,21 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     @ensemble_bounds_check
     def bounds(self, ensemble_member: int | None = None) -> AliasDict[str, tuple[BT, BT]]:
         """
-        Returns variable bounds as a dictionary mapping variable names to a pair of bounds.
+        Returns variable bounds as a dictionary mapping variable names to a pair of
+        bounds.
         A bound may be a constant, or a time series.
 
-        :param ensemble_member: The ensemble member index. Must be None (or not provided) when
-                               ensemble_specific_bounds is False. Must be an integer when
-                               ensemble_specific_bounds is True.
+        :param ensemble_member:
+            The ensemble member index. Must be None (or not provided) when
+            ensemble_specific_bounds is False. Must be an integer when
+            ensemble_specific_bounds is True.
 
-        :returns: A dictionary of variable names and ``(upper, lower)`` bound pairs.
-                  The bounds may be numbers or :class:`.Timeseries` objects.
+        :returns:
+            A dictionary of variable names and ``(upper, lower)`` bound pairs.
+            The bounds may be numbers or :class:`.Timeseries` objects.
 
         Example::
+
             # ensemble_specific_bounds is False
             def bounds(self):
                 return {'x': (1.0, 2.0), 'y': (2.0, 3.0)}
