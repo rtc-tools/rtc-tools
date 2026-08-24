@@ -133,3 +133,7 @@ RTC-Tools is part of the LF Energy ecosystem and actively welcomes collaboration
 ## Acknowledgment
 
 If you use RTC-Tools in your work, please acknowledge it in any resulting publications. You can do this by citing the RTC-Tools software and providing a link to our [GitHub repository](https://github.com/rtc-tools/rtc-tools).
+
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
