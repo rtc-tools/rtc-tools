@@ -1607,7 +1607,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "sphinx", specifier = ">=7.0.0" },
     { name = "sphinx-rtd-theme", specifier = ">=1.3.0" },
-    { name = "sphinxcontrib-bibtex" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.5.0" },
     { name = "tox", specifier = ">=4.18.0" },
     { name = "tox-uv", specifier = ">=1.25.0" },
 ]
@@ -1615,7 +1615,7 @@ docs = [
     { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "sphinx", specifier = ">=7.0.0" },
     { name = "sphinx-rtd-theme", specifier = ">=1.3.0" },
-    { name = "sphinxcontrib-bibtex" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.5.0" },
 ]
 style = [{ name = "pre-commit", specifier = ">=3.3.0" }]
 tests = [
