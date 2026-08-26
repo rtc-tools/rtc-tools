@@ -166,6 +166,11 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         if my_solver != "bonmin":
             nlpsol_options.pop("bonmin", None)
 
+        # nlpsol requires a dense 'f' and 'g'; an absent objective or a structurally
+        # zero residual transcribes to a sparse one.
+        nlp["f"] = ca.densify(nlp["f"])
+        nlp["g"] = ca.densify(nlp["g"])
+
         solver = casadi_solver("nlp", my_solver, nlp, nlpsol_options)
 
         # Solve NLP
