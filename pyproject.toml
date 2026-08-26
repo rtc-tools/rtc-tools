@@ -31,10 +31,10 @@ classifiers = [
     "Operating System :: MacOS"
 ]
 dependencies = [
-    "casadi >= 3.6.3, < 3.8, !=3.6.6",
+    "casadi >= 3.6.3, < 3.9, !=3.6.6",
     "numpy >= 1.21.2",
     "scipy >= 1.7.2",
-    "pymoca >= 0.9.1, == 0.9.*",
+    "pymoca >= 0.9.3, == 0.9.*",
     "rtc-tools-channel-flow >= 1.2.0",
     "rtc-tools-standard-library >= 0.1.2",
     "defusedxml >= 0.7.0",
