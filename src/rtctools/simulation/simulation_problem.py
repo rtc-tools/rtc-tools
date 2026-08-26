@@ -297,8 +297,8 @@ class SimulationProblem(DataStoreAccessor):
         )
         delay_time_values = delay_time_fun(*parameter_values)
         if len(delay_time_expressions) == 1:
-            return [delay_time_values]
-        return list(delay_time_values)
+            delay_time_values = [delay_time_values]
+        return [float(value) for value in delay_time_values]
 
     def _create_delay_expression_states(self):
         """
@@ -853,7 +853,7 @@ class SimulationProblem(DataStoreAccessor):
             next_state = self.__do_step(guess, dt, self.__state_vector)
 
         try:
-            if np.isnan(next_state).any():
+            if np.isnan(np.array(next_state)).any():
                 index_to_name = {index[0]: name for name, index in self.__indices.items()}
                 named_next_state = {
                     index_to_name[i]: float(next_state[i]) for i in range(0, next_state.shape[0])
