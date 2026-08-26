@@ -161,6 +161,41 @@ class TestSimulation(TestCase):
         seed = self.problem.seed()
         self.assertEqual(seed["z"], 1.0)
 
+    def test_nan_in_next_state_is_reported(self):
+        """Test that a nan in the rootfinder result is logged with the variable it belongs to."""
+        self.problem.setup_experiment(0.0, 1.0, 0.1)
+        self.problem.set_var("x_start", 0.25)
+        self.problem.set_var("constant_input", 0.0)
+        self.problem.set_var("u", 0.0)
+        self.problem.initialize()
+
+        index, _ = self.problem._SimulationProblem__indices["w"]
+        n_states = self.problem._SimulationProblem__n_states
+        self.problem._SimulationProblem__do_step = NanStep(n_states, index)
+
+        with self.assertLogs("rtctools", "ERROR") as context_manager:
+            self.problem.update(0.1)
+
+        self.assertTrue(
+            contains_regex(
+                r"(?s)Found nan\(s\) in the next_state vector.*'w'", context_manager.output
+            )
+        )
+
+
+class NanStep:
+    """Stand-in for the rootfinder, returning a state vector with a nan at ``nan_index``."""
+
+    def __init__(self, n_states, nan_index):
+        self.values = np.zeros(n_states)
+        self.values[nan_index] = np.nan
+
+    def __call__(self, *args):
+        return ca.DM(self.values)
+
+    def stats(self):
+        return {"success": True}
+
 
 class SimulationModelBase(SimulationProblem):
     _force_zero_delay = True

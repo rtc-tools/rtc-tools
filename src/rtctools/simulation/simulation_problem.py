@@ -852,19 +852,15 @@ class SimulationProblem(DataStoreAccessor):
         else:
             next_state = self.__do_step(guess, dt, self.__state_vector)
 
+        next_state_values = next_state.toarray().ravel()
+
         try:
-            if np.isnan(np.array(next_state)).any():
+            if np.isnan(next_state_values).any():
                 index_to_name = {index[0]: name for name, index in self.__indices.items()}
-                named_next_state = {
-                    index_to_name[i]: float(next_state[i]) for i in range(0, next_state.shape[0])
-                }
                 variables_with_nan = [
-                    name for name, value in named_next_state.items() if np.isnan(value)
+                    index_to_name[i] for i in np.flatnonzero(np.isnan(next_state_values))
                 ]
-                if variables_with_nan:
-                    logger.error(
-                        f"Found nan(s) in the next_state vector for:\n\t {variables_with_nan}"
-                    )
+                logger.error(f"Found nan(s) in the next_state vector for:\n\t {variables_with_nan}")
         except (KeyError, IndexError, TypeError):
             logger.warning("Something went wrong while checking for nans in the next_state vector")
 
@@ -888,7 +884,7 @@ class SimulationProblem(DataStoreAccessor):
             logger.debug(f"Residual maximum magnitude: {float(largest_res):.2E}")
 
         # Update state vector
-        self.__state_vector[: self.__n_states] = next_state.toarray().ravel()
+        self.__state_vector[: self.__n_states] = next_state_values
 
     def simulate(self):
         """
