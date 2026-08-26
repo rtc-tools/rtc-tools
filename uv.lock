@@ -1340,16 +1340,16 @@ wheels = [
 
 [[package]]
 name = "pymoca"
-version = "0.9.2"
+version = "0.9.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "antlr4-python3-runtime" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/da/2abf5d074b6e69c190aac8fd6d2f732b2fcba0b73229776a18d4cace074f/pymoca-0.9.2.tar.gz", hash = "sha256:bb0f1368e67f7bb876c3cb3a468e4d3a87a28e7624adb7483b39a22274b730e0", size = 111886, upload-time = "2025-01-28T15:44:25.037Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/63/d425049b3a796f23918d5eeb19f062c089e4ac08f275b824337d49c0a3eb/pymoca-0.9.3.tar.gz", hash = "sha256:ecd000bd594aff0cbb4b80d42225d572dcb7fe92145f5f49141d01ae5972f767", size = 111993, upload-time = "2026-08-26T11:14:56.076Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/55/ecf41c62849b27684431f096872216427d6190dec2ee8d2c2550669d7395/pymoca-0.9.2-py3-none-any.whl", hash = "sha256:13b96bd877def818fba22f43b1b3916470b573e569c7e7f1bd98a8990b9b60d3", size = 113709, upload-time = "2025-01-28T15:44:22.626Z" },
+    { url = "https://files.pythonhosted.org/packages/db/5a/495956dda2b061dcaebc761e99b2ff478332fb027a40216b975677fa3fff/pymoca-0.9.3-py3-none-any.whl", hash = "sha256:e765e95471522987f68634625c3d47d806fd0dd198c16b8e53f66bd2008aa684", size = 113761, upload-time = "2026-08-26T11:14:54.772Z" },
 ]
 
 [[package]]
@@ -1580,12 +1580,12 @@ tests = [
 
 [package.metadata]
 requires-dist = [
-    { name = "casadi", specifier = ">=3.6.3,!=3.6.6,<3.8" },
+    { name = "casadi", specifier = ">=3.6.3,!=3.6.6,<3.9" },
     { name = "defusedxml", specifier = ">=0.7.0" },
     { name = "netcdf4", marker = "extra == 'all'" },
     { name = "netcdf4", marker = "extra == 'netcdf'" },
     { name = "numpy", specifier = ">=1.21.2" },
-    { name = "pymoca", specifier = "==0.9.*,>=0.9.1" },
+    { name = "pymoca", specifier = "==0.9.*,>=0.9.3" },
     { name = "rtc-tools-channel-flow", specifier = ">=1.2.0" },
     { name = "rtc-tools-standard-library", specifier = ">=0.1.2" },
     { name = "scipy", specifier = ">=1.7.2" },
