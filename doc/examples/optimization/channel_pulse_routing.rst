@@ -3,8 +3,8 @@ Modeling Waves with different routing algorithms
 
 In the previous section we saw that RTC-Tools is able to handle non-linear hydraulics
 using non-linear optimization. However, it is also possible to approximate the non-linear
-routing with different linearizations / approximations. There are two type approximations in RTC-Tools:
-blocks direcly providing water level or blocks only providing discharge. This section deals with the first options.
+routing with different linearizations / approximations. There are two types of approximations in RTC-Tools:
+blocks directly providing water level or blocks only providing discharge. This section deals with the first option.
 
 
 The different channels

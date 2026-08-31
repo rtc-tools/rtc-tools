@@ -28,7 +28,6 @@ class ExampleSV(
             self.get_timeseries("Level_H").values[0] - p["Channel.H_b_down"]
         )
 
-        super().parameters(ensemble_member)
         return p
 
     def constraints(self, ensemble_member):
@@ -130,11 +129,8 @@ class ExampleIDZ(
         n_level_nodes = int(parameters["Channel.n_level_nodes"])
 
         initial_discharge = -self.get_timeseries("Inflow_Q").values[0]
-        for _i in range(n_level_nodes - 1):
-            state = "Channel.HQDown.Q"
-            constraints.append(
-                (self.state_at(state, times[0]), initial_discharge, initial_discharge)
-            )
+        state = "Channel.HQDown.Q"
+        constraints.append((self.state_at(state, times[0]), initial_discharge, initial_discharge))
 
         # initial_level = 0.0116
         initial_level = initial_water_level
