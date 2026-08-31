@@ -139,7 +139,7 @@ The figures below show the water level changes in a channel as a result of 50m3/
      - 
 
 
-The figures below show the water level changes in a channel as a result of 50m3/s discharge change. The channel is 100 m wide, and is 20000 km long. The responses are shown for different lenght channels. You can see that the first two channels the water level first increases above the final value. The longer the channel the slower the water level reaches the final state.
+The figures below show the water level changes in a channel as a result of a 50 m³/s discharge change. The channel is 100 m wide and 20 km long. The responses are shown for different friction coefficients. You can see that for the first two channels the water level first increases above the final value. The longer the channel, the slower the water level reaches the final state.
 
 .. list-table::
    :widths: 33 33 33
