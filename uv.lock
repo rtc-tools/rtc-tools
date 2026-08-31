@@ -1586,7 +1586,7 @@ requires-dist = [
     { name = "netcdf4", marker = "extra == 'netcdf'" },
     { name = "numpy", specifier = ">=1.21.2" },
     { name = "pymoca", specifier = "==0.9.*,>=0.9.1" },
-    { name = "rtc-tools-channel-flow", specifier = ">=1.2.0" },
+    { name = "rtc-tools-channel-flow", specifier = ">=1.4.0" },
     { name = "rtc-tools-standard-library", specifier = ">=0.1.2" },
     { name = "scipy", specifier = ">=1.7.2" },
 ]
@@ -1607,7 +1607,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "sphinx", specifier = ">=7.0.0" },
     { name = "sphinx-rtd-theme", specifier = ">=1.3.0" },
-    { name = "sphinxcontrib-bibtex" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.5.0" },
     { name = "tox", specifier = ">=4.18.0" },
     { name = "tox-uv", specifier = ">=1.25.0" },
 ]
@@ -1615,7 +1615,7 @@ docs = [
     { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "sphinx", specifier = ">=7.0.0" },
     { name = "sphinx-rtd-theme", specifier = ">=1.3.0" },
-    { name = "sphinxcontrib-bibtex" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.5.0" },
 ]
 style = [{ name = "pre-commit", specifier = ">=3.3.0" }]
 tests = [
@@ -1627,14 +1627,11 @@ tests = [
 
 [[package]]
 name = "rtc-tools-channel-flow"
-version = "1.2.0"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pymoca" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/35/d4/6fedf1e9c778972e695f45b9cac11570608581b760b601119fafa00a04f6/rtc-tools-channel-flow-1.2.0.tar.gz", hash = "sha256:9d9054e0f3208bc6f29f587a1ad35837dfd304b6e851c1017fa06575ba915649", size = 37889, upload-time = "2024-07-02T11:46:09.694Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/3e/cc75bf0d173e39e862cfcc174f7157ee56aeff105b07c4f7023726bf8a0c/rtc_tools_channel_flow-1.4.0.tar.gz", hash = "sha256:87645b1bdef973a1419a96fb340082a46b3a18bfc958d00ab8944635c276c0fd", size = 62723, upload-time = "2026-08-31T12:15:34.541Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/fe/81a3bfe57d1e6f0d1ee67dd1598c3d2258bbd9f2dbdb8f1b3a59584d8960/rtc_tools_channel_flow-1.2.0-py3-none-any.whl", hash = "sha256:fea9d9d41bfecd446965b5ab429c6d7ed3fe45f464cd50156b85f1bc037a2995", size = 63585, upload-time = "2024-07-02T11:46:08.071Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/25/39ac9e935ff214a61728182efc329c53cf0211e9c14a32963bbe46f73a67/rtc_tools_channel_flow-1.4.0-py3-none-any.whl", hash = "sha256:4234c76d5ce192103d7f0d478a8d9b5c290346b23d843e164b2a0516c71fccc8", size = 103324, upload-time = "2026-08-31T12:15:33.567Z" },
 ]
 
 [[package]]
