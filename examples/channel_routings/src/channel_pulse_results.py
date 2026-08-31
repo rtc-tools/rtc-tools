@@ -33,7 +33,7 @@ rtc_tools_idz = np.genfromtxt(
     case_sensitive="lower",
 )
 rtc_tools_id = np.genfromtxt(
-    output_dir / "timeseries_export_ID.csv",
+    output_dir / "timeseries_export_id.csv",
     delimiter=",",
     encoding=None,
     dtype=None,

@@ -80,7 +80,7 @@ def main():
     input_file_list = ["ExampleIDZ", "ExampleID", "ExampleLinear", "Example", "ExampleFullSV"]
 
     for model_name in input_file_list:
-        INPUT_FILE = "..\\model\\" + model_name + ".mo"
+        INPUT_FILE = "../model/" + model_name + ".mo"
         OUTPUT_FILE = INPUT_FILE
 
         H_b_up = length * slope
