@@ -96,7 +96,7 @@ Long channels without waves (:math:`{\chi}` > 1.35 and :math:`{\eta}` > 3):
 * The downstream reaction rises slowly
 * There is considerable time delay
 
-Depending on the type of the channel, the models for RTC-Tools can be chosen. How to know which type is a given channel? There are two ways to know it: the first option, is to plot the step response, with other words how the downstream water level (or discharge) changes with a sudden increase of the upstream discharge (or the other way around, depending what we would like to control). This plot can be done using measurements, or with any software that can numerically solve the Saint-Venant equations or with RTC-Tools, like in this example. The second method is calculate those parameters in brackets that only depend on the geometry and the discharge and water level. The formulas are given in [Horvath2024]_.
+Depending on the type of the channel, the models for RTC-Tools can be chosen. How to know which type is a given channel? There are two ways to know it: the first option, is to plot the step response, with other words how the downstream water level (or discharge) changes with a sudden increase of the upstream discharge (or the other way around, depending what we would like to control). This plot can be done using measurements, or with any software that can numerically solve the Saint-Venant equations or with RTC-Tools, like in this example. The second method is calculate those parameters in brackets that only depend on the geometry and the discharge and water level. The formulas are given in :footcite:t:`horvath_how_2024`.
 
 On channel responses
 --------------------
@@ -302,7 +302,4 @@ The results from the RTC-Tools
 Both 
 
 
-.. [Horvath2024] Horváth, K., van Esch, B., & Pothof, I. (2024).
-   *How to Choose Suitable Physics‐Based Models Without Tuning and System Identification
-   for Model‐Predictive Control of Open Water Channels?*
-   Water Resources Research, 60(4), e2023WR035687.
+.. footbibliography::
