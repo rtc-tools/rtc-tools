@@ -1,5 +1,6 @@
 import itertools
 import logging
+import math
 import time
 import warnings
 from abc import ABCMeta, abstractmethod
@@ -1279,6 +1280,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         if self.inline_delay_expressions:
             delayed_feedback_variable_replacement = ca.MX.zeros(X.numel())
             delayed_feedback_variable_replacement[:] = X
+            delayed_feedback_variable_mask = np.zeros(X.numel(), dtype=bool)
 
         # Process the objectives and constraints for each ensemble member separately.
         # Note that we don't use map here for the moment, so as to allow each ensemble member to
@@ -1893,6 +1895,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         delayed_feedback_variable_replacement[indices] = (
                             x_out_delayed / in_nominal / in_sign
                         )
+                        delayed_feedback_variable_mask[indices] = True
 
                         # Equate delayed feedback variable to zero so that the numerical solver can
                         # remove it from the problem.
@@ -2042,6 +2045,23 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # the ensemble member loop for speed reasons, as each substitute() roughly takes the
         # same amount of time regardless how many expressions we are replacing.
         if self.inline_delay_expressions:
+            # Each pass substitutes the replacement into itself and doubles the resolved nesting
+            # depth, so an acyclic dependency graph over n delay entries needs at most log2(n).
+            delay_indices = np.flatnonzero(delayed_feedback_variable_mask)
+            max_passes = math.ceil(math.log2(max(len(delay_indices), 1)))
+            for _ in range(max_passes + 1):
+                x_used = ca.which_depends(delayed_feedback_variable_replacement[delay_indices], X)
+                if not np.any(np.array(x_used)[delay_indices]):
+                    break
+                delayed_feedback_variable_replacement = ca.substitute(
+                    delayed_feedback_variable_replacement, X, delayed_feedback_variable_replacement
+                )
+            else:
+                raise Exception(
+                    "Circular dependency between delayed expressions; these cannot be inlined. "
+                    "Set inline_delay_expressions = False."
+                )
+
             g = [ca.substitute(ca.vertcat(*g), X, delayed_feedback_variable_replacement)]
 
         # NLP function
