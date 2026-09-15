@@ -55,7 +55,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
 
-        self.__mixed_integer = False
+        self._mixed_integer = False
 
     def optimize(
         self,
@@ -90,31 +90,30 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         else:
             logger.debug("Skipping Preprocessing in OptimizationProblem.optimize()")
 
-        # Transcribe problem
         discrete, lbx, ubx, lbg, ubg, x0, nlp = self.transcribe()
 
-        # Create an NLP solver
-        logger.debug("Collecting solver options")
-
-        # Set __mixed_integer from the returned discrete array so that solver_options()
+        # Set _mixed_integer from the returned discrete array so that solver_options()
         # selects the correct solver (ipopt vs bonmin) for all transcribe() implementations.
-        self.__mixed_integer = np.any(discrete)
+        self._mixed_integer = np.any(discrete)
+
         options = {}
         options.update(self.solver_options())  # Create a copy
 
         expand = options.pop("expand", False)
-        # export_lp is an output directive read from export_options(); guard against it
-        # being misplaced in solver_options(), where it would leak to the solver. Warn on
-        # the key's presence (any value) and remove it so it never reaches the solver.
-        if "export_lp" in options:
-            del options["export_lp"]
-            warnings.warn(
-                "'export_lp' was set in solver_options(); it is ignored there. "
-                "Set it in export_options() instead. It is an output directive and "
-                "must not be passed to the solver.",
-                UserWarning,
-                stacklevel=2,
-            )
+        # export_lp / track_constraint_names are output directives read from
+        # export_options(); guard against them being misplaced in solver_options(),
+        # where they would leak to the solver. Warn on presence (any value) and
+        # remove them so they never reach the solver.
+        for directive in ("export_lp", "track_constraint_names"):
+            if directive in options:
+                del options[directive]
+                warnings.warn(
+                    f"'{directive}' was set in solver_options(); it is ignored there. "
+                    "Set it in export_options() instead. It is an output directive and "
+                    "must not be passed to the solver.",
+                    UserWarning,
+                    stacklevel=2,
+                )
         # Use .get(): an empty export_options() is a valid "no directives" override.
         export_lp = self.export_options().get("export_lp", False)
         if expand or export_lp:
@@ -155,7 +154,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
         nlpsol_options = {**options}
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             nlpsol_options["discrete"] = discrete
         if iteration_callback:
             nlpsol_options["iteration_callback"] = iteration_callback
@@ -171,6 +170,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         nlp["f"] = ca.densify(nlp["f"])
         nlp["g"] = ca.densify(nlp["g"])
 
+        logger.debug("Creating solver")
         solver = casadi_solver("nlp", my_solver, nlp, nlpsol_options)
 
         # Solve NLP
@@ -323,6 +323,9 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         The default solver for mixed integer problems is `Bonmin
         <http://projects.coin-or.org/Bonmin/>`_.
 
+        RTC-Tools output directives such as ``export_lp`` and ``track_constraint_names``
+        are configured via :meth:`export_options`, not here; see its docstring for details.
+
         :returns: A dictionary of solver options. See the CasADi and
                   respective solver documentation for details.
         """
@@ -332,7 +335,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             "casadi_solver": ca.nlpsol,
         }
 
-        if self.__mixed_integer:
+        if self._mixed_integer:
             options["solver"] = "bonmin"
 
             bonmin_options = options["bonmin"] = {}
@@ -364,9 +367,16 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
           CollocatedIntegratedOptimizationProblem subclasses; see :meth:`_export_lp_file`
           for the file naming, MILP handling, and the conditions under which it raises.
 
+        * ``track_constraint_names`` (:class:`bool`, default ``False``): Populate
+          :attr:`CollocatedIntegratedOptimizationProblem._collint_constraint_names` with
+          per-row names after ``optimize()``, without writing an LP file. Useful for
+          programmatic inspection of constraint names (debugging, downstream processing).
+          Defaults to ``False`` because the list spans every collocation, DAE, and delay
+          row and can be large for complex models.
+
         :returns: A dictionary of export directives.
         """
-        return {"export_lp": False}
+        return {"export_lp": False, "track_constraint_names": False}
 
     def solver_success(
         self, solver_stats: dict[str, str | bool], log_solver_failure_as_error: bool
@@ -837,7 +847,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str]
+    ]:
         """
         Returns a list of constraints for the given ensemble member.
 
@@ -850,13 +863,19 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
                   the constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds must be numbers.
 
+                  An optional 4th element may be provided as a string label for the
+                  constraint. Goal-programming mixins always return ``_ConstraintTuple``
+                  objects carrying a ``.name`` attribute; ``f, lb, ub = c`` unpacking
+                  remains safe in both cases.
+                  Example: ``(expr, 0.0, 1.0, "my_constraint")``.
+
         Example::
 
             def constraints(self, ensemble_member):
                 t = 1.0
                 constraint1 = (
                     2 * self.state_at('x', t, ensemble_member),
-                    2.0, 4.0)
+                    2.0, 4.0, "double_x")
                 constraint2 = (
                     self.state_at('x', t, ensemble_member) + self.state_at('y', t, ensemble_member),
                     2.0, 3.0)
@@ -867,7 +886,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def path_constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray | Timeseries, float | np.ndarray | Timeseries]
+        | tuple[ca.MX, float | np.ndarray | Timeseries, float | np.ndarray | Timeseries, str]
+    ]:
         """
         Returns a list of path constraints.
 
@@ -882,11 +904,18 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
                   the path constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds may be numbers or :class:`.Timeseries` objects.
 
+                  An optional 4th element may be provided as a string label. Goal-
+                  programming mixins always return ``_ConstraintTuple`` objects carrying a
+                  ``.name`` attribute; ``f, lb, ub = c`` unpacking remains safe in both
+                  cases. When ``export_lp=True`` a ``_t{i}`` suffix per
+                  time step is added to the label in the LP file.
+                  Example: ``(expr, 0.0, 1.0, "flow_bounds")``.
+
         Example::
 
             def path_constraints(self, ensemble_member):
                 # 2 * x must lie between 2 and 4 for every time instance.
-                path_constraint1 = (2 * self.state('x'), 2.0, 4.0)
+                path_constraint1 = (2 * self.state('x'), 2.0, 4.0, "double_x")
                 # x + y must lie between 2 and 3 for every time instance
                 path_constraint2 = (self.state('x') + self.state('y'), 2.0, 3.0)
                 return [path_constraint1, path_constraint2]
