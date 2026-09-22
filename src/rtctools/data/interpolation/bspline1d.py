@@ -106,10 +106,10 @@ class BSpline1D(BSpline):
         t = np.concatenate(
             (np.full(k + 1, x[0] - delta), interior_pts, np.full(k + 1, x[-1] + delta))
         )
-        num_knots = len(t)
+        num_coeffs = len(t) - k - 1
 
         # Casadi Variable Symbols
-        c = SX.sym("c", num_knots)
+        c = SX.sym("c", num_coeffs)
         x_sym = SX.sym("x")
 
         # Casadi Representation of Spline Function & Derivatives
@@ -129,21 +129,21 @@ class BSpline1D(BSpline):
         f = sum2(sq_diff(c, SX(x), SX(y)))
 
         # Setup Curvature Constraints
-        delta_c_max = np.full(num_knots - 1, inf)
-        delta_c_min = np.full(num_knots - 1, -inf)
+        delta_c_max = np.full(num_coeffs - 1, inf)
+        delta_c_min = np.full(num_coeffs - 1, -inf)
         max_slope_slope = np.full(num_test_points, inf)
         min_slope_slope = np.full(num_test_points, -inf)
         if monotonicity != 0:
             if monotonicity < 0:
-                delta_c_max = np.full(num_knots - 1, -epsilon)
+                delta_c_max = np.full(num_coeffs - 1, -epsilon)
             else:
-                delta_c_min = np.full(num_knots - 1, epsilon)
+                delta_c_min = np.full(num_coeffs - 1, epsilon)
         if curvature != 0:
             if curvature < 0:
                 max_slope_slope = np.full(num_test_points, -epsilon)
             else:
                 min_slope_slope = np.full(num_test_points, epsilon)
-        monotonicity_constraints = vertcat(*[c[i + 1] - c[i] for i in range(num_knots - 1)])
+        monotonicity_constraints = vertcat(*[c[i + 1] - c[i] for i in range(num_coeffs - 1)])
         x_linspace = np.linspace(x[0], x[-1], num_test_points)
         curvature_constraints = vertcat(*[bspline_prime_prime(c, SX(x)) for x in x_linspace])
         g = vertcat(monotonicity_constraints, curvature_constraints)
