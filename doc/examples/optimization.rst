@@ -13,6 +13,7 @@ This section provides examples demonstrating key features of RTC-Tools optimizat
    optimization/channel_pulse
    optimization/step_response
    optimization/channel_wave_damping
+   optimization/linearised_SV
    optimization/debugging
    optimization/fallback_options
    optimization/integrator_delay
