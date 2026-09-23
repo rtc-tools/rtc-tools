@@ -71,15 +71,23 @@ class TestBSpline1DFit(TestCase):
                 2.07664058e08,
                 2.57930573e08,
                 2.63110885e08,
-                2.63210885e08,
-                2.63310885e08,
-                2.63410885e08,
-                2.63510885e08,
             ]
         )
+        # 9 knots and k = 3 give 9 - k - 1 = 5 coefficients, one per data point.
         np.testing.assert_almost_equal(t, t_ref)
         np.testing.assert_almost_equal(c, c_ref, decimal=0)
         self.assertEqual(k, 3)
+
+        # One point inside the support of each of the 5 basis functions fixes all 5
+        # coefficients, so equal values here mean the same curve, not just similar ones.
+        x_trial = [5.4, 8.0, 10.83, 11.0, 11.3]
+        y_ref = [1.23586075e08, 1.82936781e08, 2.47571800e08, 2.51455702e08, 2.58310098e08]
+        x_sym = SX.sym("x")
+        f = Function(
+            "f", [x_sym], [rtctools.data.interpolation.bspline1d.BSpline1D(t, c, k)(x_sym)]
+        )
+        y_trial = [float(f(xi)) for xi in x_trial]
+        np.testing.assert_almost_equal(y_trial, y_ref, decimal=0)
 
 
 # class TestBSpline2D(TestCase):
