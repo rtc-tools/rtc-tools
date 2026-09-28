@@ -314,10 +314,10 @@ class CSVLookupTableMixin(OptimizationProblem):
             logger.debug(f"CSVLookupTableMixin: Output is {output}, inputs are {inputs}.")
 
             tck = None
-            function = None
 
             # If tck file is newer than the csv file, first try to load the cached values from
-            # the tck file
+            # the tck file. The CasADi function is always rebuilt from the tck values; serialized
+            # CasADi functions are not loaded, as these can reference external shared libraries.
             tck_filename = filename.replace(".csv", ".npz")
             valid_cache = False
             if os.path.exists(tck_filename):
@@ -334,7 +334,6 @@ class CSVLookupTableMixin(OptimizationProblem):
                     try:
                         with np.load(filename.replace(".csv", ".npz")) as data:
                             tck = (data["arr_0"], data["arr_1"], int(data["arr_2"]))
-                        function = ca.Function.load(filename.replace(".csv", ".ca"))
                     except Exception:
                         valid_cache = False
 
@@ -384,8 +383,7 @@ class CSVLookupTableMixin(OptimizationProblem):
                     pylab.savefig(figure_filename)
 
                 symbols = [ca.SX.sym(inputs[0])]
-                if not valid_cache:
-                    function = ca.Function("f", symbols, [BSpline1D(*tck)(symbols[0])])
+                function = ca.Function("f", symbols, [BSpline1D(*tck)(symbols[0])])
                 check_lookup_table(output)
                 self.__lookup_tables[output] = LookupTable(symbols, function, tck)
 
@@ -429,8 +427,7 @@ class CSVLookupTableMixin(OptimizationProblem):
                     figure_filename = filename.replace(".csv", ".png")
                     pylab.savefig(figure_filename)
                 symbols = [ca.SX.sym(inputs[0]), ca.SX.sym(inputs[1])]
-                if not valid_cache:
-                    function = ca.Function("f", symbols, [BSpline2D(*tck)(symbols[0], symbols[1])])
+                function = ca.Function("f", symbols, [BSpline2D(*tck)(symbols[0], symbols[1])])
                 check_lookup_table(output)
                 self.__lookup_tables[output] = LookupTable(symbols, function, tck)
 
@@ -442,7 +439,6 @@ class CSVLookupTableMixin(OptimizationProblem):
 
             if not valid_cache:
                 np.savez(filename.replace(".csv", ".npz"), *tck)
-                function.save(filename.replace(".csv", ".ca"))
 
     def lookup_tables(self, ensemble_member):
         # Call parent class first for default values.

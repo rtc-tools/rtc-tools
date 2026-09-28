@@ -1,5 +1,8 @@
 import logging
+import os
+from unittest import mock
 
+import casadi as ca
 import numpy as np
 
 from rtctools.optimization.collocated_integrated_optimization_problem import (
@@ -92,3 +95,39 @@ class TestCSVLookupMixin(TestCase):
         np.testing.assert_allclose(x_prime_results, x_prime_desired_results, equal_nan=True)
         # x_prime min is 4.0, so x should be 0.2 when minimized
         np.testing.assert_allclose(x_results, 0.2, equal_nan=True)
+
+
+class TestCSVLookupTableCache(TestCase):
+    def setUp(self):
+        self.csv_file = os.path.join(data_path(), "lookup_tables", "x_prime.csv")
+        self.npz_file = self.csv_file.replace(".csv", ".npz")
+        self.ca_file = self.csv_file.replace(".csv", ".ca")
+        for f in (self.npz_file, self.ca_file):
+            if os.path.exists(f):
+                os.remove(f)
+
+    def tearDown(self):
+        if os.path.exists(self.ca_file):
+            os.remove(self.ca_file)
+
+    def test_serialized_function_not_loaded_from_cache(self):
+        # First run fits the spline and writes the tck cache, but no serialized function
+        Model().optimize()
+        self.assertTrue(os.path.exists(self.npz_file))
+        self.assertFalse(os.path.exists(self.ca_file))
+
+        # A (potentially malicious) serialized CasADi function next to the cache must be ignored
+        with open(self.ca_file, "w") as f:
+            f.write("not a casadi function")
+        mtime = os.path.getmtime(self.csv_file) + 10
+        os.utime(self.npz_file, (mtime, mtime))
+        os.utime(self.ca_file, (mtime, mtime))
+
+        with mock.patch.object(ca.Function, "load") as function_load:
+            problem = Model()
+            problem.optimize()
+            function_load.assert_not_called()
+
+        lt_x_prime = problem.lookup_tables(0)["x_prime"]
+        np.testing.assert_allclose(lt_x_prime(0.2), 4.0)
+        np.testing.assert_allclose(float(lt_x_prime.function(0.3)), 9.0)
