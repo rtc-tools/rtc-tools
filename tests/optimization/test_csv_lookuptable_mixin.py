@@ -5,6 +5,7 @@ from unittest import mock
 import casadi as ca
 import numpy as np
 
+from rtctools.data.interpolation.bspline1d import BSpline1D
 from rtctools.optimization.collocated_integrated_optimization_problem import (
     CollocatedIntegratedOptimizationProblem,
 )
@@ -119,14 +120,22 @@ class TestCSVLookupTableCache(TestCase):
         # A (potentially malicious) serialized CasADi function next to the cache must be ignored
         with open(self.ca_file, "w") as f:
             f.write("not a casadi function")
-        mtime = os.path.getmtime(self.csv_file) + 10
+        ini_file = os.path.join(os.path.dirname(self.csv_file), "curvefit_options.ini")
+        mtime = max(os.path.getmtime(self.csv_file), os.path.getmtime(ini_file)) + 10
         os.utime(self.npz_file, (mtime, mtime))
         os.utime(self.ca_file, (mtime, mtime))
 
-        with mock.patch.object(ca.Function, "load") as function_load:
+        with (
+            mock.patch.object(
+                ca.Function, "load", side_effect=AssertionError("Function.load called")
+            ) as function_load,
+            mock.patch.object(BSpline1D, "fit", wraps=BSpline1D.fit) as spline_fit,
+        ):
             problem = Model()
             problem.optimize()
             function_load.assert_not_called()
+            # The cached tck values must have been used, i.e. no refit
+            spline_fit.assert_not_called()
 
         lt_x_prime = problem.lookup_tables(0)["x_prime"]
         np.testing.assert_allclose(lt_x_prime(0.2), 4.0)

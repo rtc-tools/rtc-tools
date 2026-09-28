@@ -219,6 +219,11 @@ class CSVLookupTableMixin(OptimizationProblem):
         Currently only one-dimensional lookup tables are fully supported.  Support for two-
         dimensional lookup tables is experimental.
 
+    The fitted spline coefficients are cached in a ``.npz`` file next to each CSV file, and reused
+    if the cache is newer than the CSV file (and ``curvefit_options.ini``). The cache only contains
+    numeric arrays; the lookup table functions are always rebuilt from these coefficients.
+    ``.ca`` files written by older versions of RTC-Tools are no longer used and can be deleted.
+
     :cvar csv_delimiter:  Column delimiter used in CSV files. Default is ``,``.
     :cvar csv_lookup_table_debug:  Whether to generate plots of the spline fits.
         Default is ``False``.

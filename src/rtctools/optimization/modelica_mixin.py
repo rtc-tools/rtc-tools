@@ -164,6 +164,15 @@ class ModelicaMixin(OptimizationProblem):
 
         :returns:
             A dictionary of pymoca compiler options.  See the pymoca documentation for details.
+
+        .. warning::
+
+            By default, the compiled model is cached in a ``<model_name>.pymoca_cache`` file in the
+            model folder, which is loaded on subsequent runs if it is newer than the Modelica
+            files. This cache file is deserialized with :mod:`pickle` and must therefore be treated
+            as executable code: never accept it from an untrusted source, and delete any
+            ``.pymoca_cache`` files before running a model received from someone else. To disable
+            the cache, set ``compiler_options["cache"] = False``.
         """
 
         # Default options
