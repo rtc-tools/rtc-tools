@@ -82,28 +82,28 @@ axarr[0].plot(
 axarr[0].plot(
     times,
     rtc_tools_linear["channel_q_dn"],
-    label="Downstream\n(RTC-Tools Inertial Wave)",
+    label="Downstream\n(RTC-Tools linear)",
     linestyle="--",
     color="red",
 )
 axarr[0].plot(
     times,
     rtc_tools_idz["channel_q_dn"],
-    label="Downstream\n(RTC-Tools Inertial Wave semi-impl.)",
+    label="Downstream\n(RTC-Tools IDZ)",
     linestyle="--",
     color="pink",
 )
 axarr[0].plot(
     times,
     rtc_tools_homotopy["channel_q_dn"],
-    label="Downstream\n(RTC-Tools Saint Venant central diff.)",
+    label="Downstream\n(RTC-Tools Saint Venant)",
     linestyle="--",
     color="darkorange",
 )
 axarr[0].plot(
     times,
     rtc_tools_lin_sv["channel_q_dn"],
-    label="Downstream\n(RTC-Tools Saint Venant upwind)",
+    label="Downstream\n(RTC-Tools linearised Saint Venant)",
     linestyle="--",
     color="purple",
 )
@@ -201,8 +201,6 @@ for i in range(n_subplots):
     box = axarr[i].get_position()
     axarr[i].set_position([box.x0, box.y0, box.width * 0.65, box.height])
     axarr[i].legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False, prop={"size": 8})
-
-plt.autoscale(enable=True, axis="x", tight=True)
 
 
 # Output Plot

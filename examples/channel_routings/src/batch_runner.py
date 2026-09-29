@@ -1,9 +1,8 @@
+import csv
 import re
 import subprocess
 import sys
 from pathlib import Path
-
-import pandas as pd
 
 # =============================================================================
 # Experiment configuration
@@ -117,11 +116,12 @@ for parameter_value in PARAMETER_VALUES:
             parameter_value,
         )
 
-    scale_modelica_parameter(
-        MODEL_FOLDER / "ExampleID.mo",
-        "Ad",
-        ratio,
-    )
+    if PARAMETER_NAME == "length" or PARAMETER_NAME == "width":
+        scale_modelica_parameter(
+            MODEL_FOLDER / "ExampleID.mo",
+            "Ad",
+            ratio,
+        )
 
     if PARAMETER_NAME == "length":
         scale_modelica_parameter(
@@ -135,22 +135,24 @@ for parameter_value in PARAMETER_VALUES:
         FILE2 = "channel_pulse_results.py"
         FILE2_ARG = f"{level_value}_{parameter_value}"
 
-        # -----------------------------
-        # Step 1: Read CSV
-        # -----------------------------
-        df = pd.read_csv(INPUT_FILE)
+        # Read CSV
+        with open(INPUT_FILE, newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
 
-        # Safety check
-        if "Level_H" not in df.columns:
+        if "Level_H" not in fieldnames:
             raise ValueError("Column 'Level_H' not found in CSV")
 
-        # -----------------------------
-        # Step 2: Populate Level_H
-        # -----------------------------
-        df["Level_H"] = level_value
+        # Update Level_H
+        for row in rows:
+            row["Level_H"] = level_value
 
-        # Save back to CSV
-        df.to_csv(INPUT_FILE, index=False)
+        # Write CSV back
+        with open(INPUT_FILE, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
 
         print(f"Set all Level_H values to {level_value}")
 
@@ -158,14 +160,12 @@ for parameter_value in PARAMETER_VALUES:
         # Step 3: Run file1.py
         # -----------------------------
         subprocess.run([sys.executable, FILE1], check=True)
-
         print(f"{FILE1} executed successfully")
 
         # -----------------------------
         # Step 4: Run file2.py with argument
         # -----------------------------
         subprocess.run([sys.executable, FILE2, FILE2_ARG], check=True)
-
         print(f"{FILE2} executed with argument: {FILE2_ARG}")
 
         print("=" * 80)

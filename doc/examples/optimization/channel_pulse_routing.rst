@@ -303,7 +303,7 @@ corresponding plots.
 
 .. note::
 
-     The nominal depth/level is currently interpreted differently by different blocks, which can be confusing. In ``LinearizedSV``, ``h_nominal`` represents the water depth, whereas in ``IDZ``, ``H_nominal`` represents the water level. These differences can be observed and tested using sufficiently deep channels.
+     The nominal depth/level is currently interpreted differently by different blocks, which can be confusing. In ``LinearisedSV``, ``H_nominal`` represents the water depth, whereas in ``IDZ``, ``H_nominal`` represents the water level. These differences can be observed and tested using sufficiently deep channels.
 
 .. [Horvath2024] Horváth, K., van Esch, B., & Pothof, I. (2024).
    *How to Choose Suitable Physics‐Based Models Without Tuning and System Identification
