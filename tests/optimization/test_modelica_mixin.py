@@ -1,10 +1,13 @@
 import logging
+import os
 import sys
 import unittest
 
 import casadi as ca
 import numpy as np
 from casadi import MX
+from pymoca import parser
+from pymoca.backends.casadi import generator
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools.optimization.collocated_integrated_optimization_problem import (
@@ -88,6 +91,26 @@ class Model(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
         compiler_options["cache"] = False
         compiler_options["library_folders"] = []
         return compiler_options
+
+
+class ModelInMemory(Model):
+    """ModelWithInitial under a name that no file in the model folder defines."""
+
+    def __init__(self):
+        self._extra_variable = MX.sym("extra")
+        super(Model, self).__init__(
+            input_folder=data_path(),
+            output_folder=data_path(),
+            model_name="InMemory",
+            model_folder=data_path(),
+        )
+
+    def pymoca_model(self, model_folder, model_name, compiler_options):
+        with open(os.path.join(model_folder, "ModelWithInitial.mo")) as f:
+            source = f.read().replace("ModelWithInitial", model_name)
+        model = generator.generate(parser.parse(source), model_name, compiler_options)
+        model.simplify(compiler_options)
+        return model
 
 
 class ModelNonConvex(Model):
@@ -467,6 +490,15 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
         integral = self.problem.integral("x", 0.0, t_end)
         verify = trapezoid([*self.problem.times()[0:-1], t_end])
         self.assertAlmostEqual(eval_expr(integral), eval_expr(verify), self.tolerance)
+
+
+class TestModelicaMixinInMemory(TestCase, unittest.TestCase):
+    def test_results_equal_model_from_folder(self):
+        expected = Model()
+        expected.optimize()
+        actual = ModelInMemory()
+        actual.optimize()
+        self.assertAlmostEqual(actual.extract_results()["x"], expected.extract_results()["x"], 1e-6)
 
 
 class TestModelicaMixinScaled(TestModelicaMixin):

@@ -49,21 +49,9 @@ class ModelicaMixin(OptimizationProblem):
             else:
                 model_name = self.__class__.__name__
 
-        compiler_options = self.compiler_options()
-        logger.info(f"Loading/compiling model {model_name}.")
-        try:
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
-        except (RuntimeError, ModuleNotFoundError) as error:
-            if not compiler_options.get("cache", False):
-                raise error
-            compiler_options["cache"] = False
-            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
-            logger.info(f"Compiling model {model_name}.")
-            self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
-                kwargs["model_folder"], model_name, compiler_options
-            )
+        self.__pymoca_model = self.pymoca_model(
+            kwargs["model_folder"], model_name, self.compiler_options()
+        )
 
         # Extract the CasADi MX variables used in the model
         self.__mx = {}
@@ -155,6 +143,37 @@ class ModelicaMixin(OptimizationProblem):
 
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
+
+    def pymoca_model(
+        self, model_folder: str, model_name: str, compiler_options: dict[str, str | bool]
+    ) -> pymoca.backends.casadi.model.Model:
+        """
+        Load or compile the model named ``model_name`` from the Modelica files in
+        ``model_folder``.
+
+        Override this method to supply a model from elsewhere, e.g. one composed in memory.
+        The model is requested once, from ``__init__``.
+
+        :param model_folder: Folder containing the Modelica files.
+        :param model_name: Name of the model class to compile.
+        :param compiler_options: The options returned by :py:meth:`compiler_options`.
+
+        :returns: A pymoca CasADi model.
+        """
+        logger.info(f"Loading/compiling model {model_name}.")
+        try:
+            return pymoca.backends.casadi.api.transfer_model(
+                model_folder, model_name, compiler_options
+            )
+        except (RuntimeError, ModuleNotFoundError) as error:
+            if not compiler_options.get("cache", False):
+                raise error
+            compiler_options["cache"] = False
+            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
+            logger.info(f"Compiling model {model_name}.")
+            return pymoca.backends.casadi.api.transfer_model(
+                model_folder, model_name, compiler_options
+            )
 
     @cached
     def compiler_options(self) -> dict[str, str | bool]:
