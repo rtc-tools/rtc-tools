@@ -668,6 +668,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
                 )
             )
 
+        if getattr(self, "_gp_prune_subproblems", False):
+            logger.info("Intermediate homotopy step: pruning subproblems to first subproblem only.")
+            subproblems = subproblems[:1]
+
         # Solve the subproblems one by one
         logger.info("Starting goal programming")
 
