@@ -42,6 +42,11 @@ dependencies = [
 
 [project.optional-dependencies]
 netcdf = ["netCDF4"]
+# highspy >= 1.15 loads a shared libhighs.so.1 that clashes with the one bundled in
+# CasADi's Linux wheels (undefined symbol on import); earlier versions link HiGHS statically.
+highs = [
+    "highspy>=1.13.1,<1.15",
+]
 all = ["netCDF4"]
 
 [dependency-groups]
