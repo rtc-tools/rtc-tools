@@ -181,9 +181,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints += self._gp_build_constraint_list(additional_constraints)
         return constraints
 
     def path_constraints(self, ensemble_member):
@@ -195,9 +193,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_path_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints += self._gp_build_constraint_list(additional_path_constraints)
         return path_constraints
 
     def solver_options(self):
@@ -611,13 +607,18 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         options = self.goal_programming_options()
 
+        pareto_name = f"pareto_p{self._gp_current_priority}"
         if options["fix_minimized_values"]:
-            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True)
+            constraint = _GoalConstraint(
+                None, _constraint_func, obj_val, obj_val, True, pareto_name
+            )
             self.check_collocation_linearity = False
             self.linear_collocation = False
         else:
             obj_val += options["constraint_relaxation"]
-            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True)
+            constraint = _GoalConstraint(
+                None, _constraint_func, -np.inf, obj_val, True, pareto_name
+            )
 
         # The goal works over all ensemble members, so we add it to the last
         # one, as at that point the inputs of all previous ensemble members
