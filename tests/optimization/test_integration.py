@@ -345,6 +345,27 @@ class TestConflictingBounds(TestCase):
             problem.optimize()
 
         self.assertIn("Lower bound 0.5 is higher than upper bound 0.3 for variable u", cm.output[0])
+        self.assertRegex(cm.output[0], r"first at entry \d+ of \d+; \d+ entries conflict\)")
+        self.assertIn("may be infeasible", cm.output[0])
+
+
+class SingleShootingScalarConflictingBoundsModel(SingleShootingModel):
+    """Integrated states have a single entry (int index) in the state vector."""
+
+    def bounds(self):
+        return {**super().bounds(), "x": (1.0, 0.0)}
+
+
+class TestConflictingScalarBounds(TestCase):
+    def test_conflicting_bounds_on_scalar_variable_are_logged(self):
+        problem = SingleShootingScalarConflictingBoundsModel()
+        with self.assertRaises(RuntimeError), self.assertLogs(level="ERROR") as cm:
+            problem.optimize()
+
+        self.assertTrue(
+            any("is higher than upper bound" in msg and "variable x" in msg for msg in cm.output),
+            cm.output,
+        )
 
 
 class SingleShootingEnsembleStatesBoundsModel(SingleShootingEnsembleModel):
