@@ -153,7 +153,7 @@ By following these guidelines, you help ensure RTC-Tools remains robust, maintai
 
 To set up your development environment, you will need:
 
-- Python 3.11 or higher (up to 3.14)
+- Python 3.11 or higher (up to 3.15)
 - Git
 - uv: see the [official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 

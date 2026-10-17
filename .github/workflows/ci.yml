@@ -61,11 +61,12 @@ jobs:
           - version: '3.12'
           - version: '3.13'
           - version: '3.14'
+          - version: '3.15'
           # Lowest and highest resolution modes to test oldest and newest dependencies.
           - version: '3.11'
             resolution_mode: 'lowest'
             label: ' (Oldest Dependencies)'
-          - version: '3.14'
+          - version: '3.15'
             resolution_mode: 'highest'
             label: ' (Newest Dependencies)'
     steps:
@@ -123,6 +124,7 @@ jobs:
         - '3.12'
         - '3.13'
         - '3.14'
+        - '3.15'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
     - uses: ./.github/actions/setup-python
