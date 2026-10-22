@@ -93,6 +93,9 @@ include = [
   "/README.md",
 ]
 
+[tool.uv]
+constraint-dependencies = ["certifi>=2026.10.19"]
+
 [tool.ruff]
 lint.ignore = [
 	"B904", # Fix someday: raising exceptions within except
