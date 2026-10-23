@@ -1,5 +1,7 @@
 import datetime
 import pathlib
+import tempfile
+import xml.etree.ElementTree as ET
 from unittest import TestCase
 
 import numpy as np
@@ -193,3 +195,33 @@ class TestPI(TestCase):
                 self.data_config, data_path(), "timeseries_export", binary=binary
             )
             self.assertEqual(len(timeseries.get("S", ensemble_member=0)), 10)
+
+    def test_new_timeseries_schema_location(self):
+        timeseries_import = pi.Timeseries(
+            self.data_config, data_path(), "timeseries_import", binary=False
+        )
+
+        with tempfile.TemporaryDirectory() as output_folder:
+            timeseries = pi.Timeseries(
+                self.data_config,
+                output_folder,
+                "timeseries_export",
+                binary=False,
+                make_new_file=True,
+            )
+            timeseries.times = timeseries_import.times
+            timeseries.forecast_datetime = timeseries_import.forecast_datetime
+            timeseries.dt = timeseries_import.dt
+            timeseries.timezone = timeseries_import.timezone
+            timeseries.ensemble_size = 1
+            timeseries.contains_ensemble = False
+            timeseries.set("S", timeseries_import.get("S"))
+            timeseries.write()
+
+            root = ET.parse(timeseries.output_path()).getroot()
+
+        self.assertEqual(
+            root.get("{http://www.w3.org/2001/XMLSchema-instance}schemaLocation"),
+            "http://www.wldelft.nl/fews/PI "
+            "https://fewsdocs.deltares.nl/schemas/version1.0/pi-schemas/pi_timeseries.xsd",
+        )

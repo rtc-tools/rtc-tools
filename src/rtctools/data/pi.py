@@ -699,7 +699,7 @@ class Timeseries:
         self.__xml_root.set(
             "xsi:schemaLocation",
             "http://www.wldelft.nl/fews/PI "
-            "http://fews.wldelft.nl/schemas/version1.0/pi-schemas/pi_timeseries.xsd",
+            "https://fewsdocs.deltares.nl/schemas/version1.0/pi-schemas/pi_timeseries.xsd",
         )
 
     def __parse_date_time(self, el):
