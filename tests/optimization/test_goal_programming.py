@@ -927,7 +927,7 @@ class TestGoalProgrammingInvalidGoals(TestCase):
 
     def test_function_range_present(self):
         self.problem._goals = [InvalidGoal(target_min=2.0)]
-        with self.assertRaisesRegex(Exception, "No function range specified"):
+        with self.assertRaisesRegex(ValueError, "has target bounds but no finite function_range"):
             self.problem.optimize()
 
     def test_function_range_valid(self):
@@ -1175,3 +1175,115 @@ class TestGoalProgrammingEnsembleBoundsAutoSetFunctionRange(TestCase):
             f"Automatically set function_range is incorrect. "
             f"Expected {problem.bounds(0).get('x')}, got {function_range}",
         )
+
+
+class ModelForInfiniteBounds(EnsembleBoundsGoalProgrammingModel):
+    """Model whose bounds() yields (-inf, inf) for the goal's state, as when the
+    model provides no finite min/max."""
+
+    def bounds(self, ensemble_member: int):
+        bounds = super().bounds(ensemble_member)
+        bounds["x"] = (-np.inf, np.inf)
+        return bounds
+
+    def path_goals(self):
+        return [EnsembleBoundsStateGoal(self)]
+
+
+class CriticalEnsembleBoundsStateGoal(EnsembleBoundsStateGoal):
+    """Critical variant: function_range is not used for critical goals, so an
+    infinite derived range must not raise."""
+
+    critical = True
+
+
+class ModelForInfiniteBoundsCritical(ModelForInfiniteBounds):
+    def path_goals(self):
+        return [CriticalEnsembleBoundsStateGoal(self)]
+
+
+class TestGoalProgrammingInfiniteDerivedFunctionRange(TestCase):
+    def test_actionable_error_when_derived_function_range_is_infinite(self):
+        """
+        When function_range is auto-derived from bounds() but those bounds are not
+        finite, the goal should fail with an actionable message pointing the user
+        at function_range (raised in validate_goals()).
+        """
+        problem = ModelForInfiniteBounds()
+        with self.assertRaisesRegex(ValueError, "has target bounds but no finite function_range"):
+            problem.optimize()
+
+    def test_critical_goal_with_infinite_range_does_not_raise(self):
+        """
+        function_range is not used for critical goals, so an infinite derived
+        range must not trigger the function_range error (backwards compatibility).
+        """
+        problem = ModelForInfiniteBoundsCritical()
+        try:
+            problem.optimize()
+        except Exception as e:
+            if "function_range" in str(e):
+                self.fail(
+                    "Critical goal with infinite derived function_range should not "
+                    f"raise the function_range error, but got: {e}"
+                )
+            raise
+        # Confirm the goal actually ran to completion with an infinite derived range,
+        # so this test cannot pass vacuously if a fixture change makes bounds finite.
+        self.assertTrue(np.isfinite(problem.objective_value))
+
+
+class TestGoalProgrammingExplicitFunctionRangeNotOverwritten(TestCase):
+    def test_explicit_function_range_is_retained_with_infinite_bounds(self):
+        """
+        StateGoal.__init__ must not overwrite an explicitly-set function_range with
+        the value from bounds(), even when bounds() returns (-inf, inf).
+        """
+        problem = ModelForInfiniteBounds()
+        goal = ExplicitFunctionRangeGoal(problem)
+        self.assertEqual(goal.function_range, (-20.0, 20.0))
+
+    def test_explicit_function_range_with_state_missing_from_bounds(self):
+        """
+        With ensemble_specific_bounds=True, an explicit function_range must not
+        trigger a bounds() lookup, so a state without a bounds entry is fine.
+        """
+        problem = EnsembleBoundsGoalProgrammingModel()
+        self.assertNotIn("x", problem.bounds(0))
+        goal = ExplicitFunctionRangeGoal(problem)
+        self.assertEqual(goal.function_range, (-20.0, 20.0))
+
+    def test_missing_bounds_entry_without_explicit_function_range_raises(self):
+        """Without an explicit function_range, a state missing from bounds() still raises."""
+        problem = EnsembleBoundsGoalProgrammingModel()
+        with self.assertRaisesRegex(Exception, "has no bounds or does not exist"):
+            EnsembleBoundsStateGoal(problem)
+
+
+class ModelPlainBoundsMissingState(Model):
+    """Model without ensemble-specific bounds whose bounds() returns no bounds at all."""
+
+    def bounds(self):
+        return {}
+
+
+class TestGoalProgrammingStateGoalFunctionRangeNonEnsemble(TestCase):
+    def test_explicit_function_range_is_retained(self):
+        problem = Model()
+        self.assertNotEqual(problem.bounds()["x"], (-20.0, 20.0))
+        goal = ExplicitFunctionRangeGoal(problem)
+        self.assertEqual(goal.function_range, (-20.0, 20.0))
+
+    def test_function_range_derived_from_bounds(self):
+        problem = Model()
+        goal = EnsembleBoundsStateGoal(problem)
+        self.assertEqual(goal.function_range, problem.bounds()["x"])
+
+    def test_explicit_function_range_with_state_missing_from_bounds(self):
+        goal = ExplicitFunctionRangeGoal(ModelPlainBoundsMissingState())
+        self.assertEqual(goal.function_range, (-20.0, 20.0))
+
+    def test_missing_bounds_entry_without_explicit_function_range_raises(self):
+        problem = ModelPlainBoundsMissingState()
+        with self.assertRaisesRegex(Exception, "has no bounds or does not exist"):
+            EnsembleBoundsStateGoal(problem)
