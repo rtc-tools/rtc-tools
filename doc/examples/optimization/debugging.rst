@@ -45,6 +45,23 @@ programming solves more than one priority, each priority gets its own file with 
 constant terms an LP file can hold (no NaN, no lower bound of +inf, no upper bound of -inf, no
 infinite constant). It raises a :exc:`ValueError` otherwise.
 
+By default the constraint rows are unnamed. Set the class attribute
+``track_constraint_names = True`` to label each row by its origin:
+
+* ``initial_residual_{i}`` and ``initial_derivative_{i}``: model equations at the initial time
+* ``collocation_eq{i}__t{t}``: model equation ``i`` at time index ``t``
+* ``delay_{variable}__t{t}``: delayed feedback
+* ``constraint_{i}`` and ``path_constraint_{i}__t{t}``: entries of
+  :meth:`~rtctools.optimization.optimization_problem.OptimizationProblem.constraints` and
+  :meth:`~rtctools.optimization.optimization_problem.OptimizationProblem.path_constraints`
+* ``objective_priority_{p}``: objective of an earlier priority, added by
+  :class:`~rtctools.optimization.single_pass_goal_programming_mixin.SinglePassGoalProgrammingMixin`
+
+Elements of a vector constraint get ``__{k}``, and ensemble members ``__m{i}``. A row with a
+finite lower and upper bound becomes two lines, labelled ``__lb`` and ``__ub``. Characters
+that LP readers reject become ``_``, and repeated labels get ``__d{n}``. The labels are also
+available without exporting, in ``transcribed_problem["g_names"]`` after :meth:`optimize`.
+
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported

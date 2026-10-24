@@ -1,6 +1,7 @@
 import logging
 import os
 import textwrap
+from collections import Counter
 
 import casadi as ca
 import numpy as np
@@ -18,6 +19,9 @@ LP_FEASIBILITY_EPSILON = 1e-9
 
 # Variable fixed to 0 that stands in for the missing variable term of an infeasible constant row
 LP_ZERO_VAR = "__zero"
+
+# Characters LP readers reject in names; a backslash would start a comment
+_LP_FORBIDDEN_NAME_CHARS = str.maketrans(dict.fromkeys(" \t\r\n\\:+-*/^<>=()[]'\"#", "_"))
 
 logger = logging.getLogger("rtctools")
 
@@ -52,6 +56,28 @@ def _format_lp_bound(val: float) -> str:
     if np.isneginf(val):
         return "-Inf"
     return f"{val:.15g}"
+
+
+def _sanitize_lp_name(name: str) -> str:
+    """Replace characters LP readers reject, and prefix a leading digit or period."""
+    name = name.translate(_LP_FORBIDDEN_NAME_CHARS)
+    return f"_{name}" if name[:1].isdigit() or name[:1] == "." else name
+
+
+def _deduplicate(names: list[str]) -> list[str]:
+    """Append ``__d{n}`` to every occurrence of a repeated name, keeping all names unique."""
+    counts = Counter(names)
+    taken = set(names)
+    next_index = Counter()
+    result = []
+    for name in names:
+        if counts[name] > 1:
+            while (candidate := f"{name}__d{next_index[name]}") in taken:
+                next_index[name] += 1
+            taken.add(candidate)
+            name = candidate
+        result.append(name)
+    return result
 
 
 def _describe(indices, names: list[str] | None) -> str:
@@ -133,6 +159,7 @@ def _build_constraints(
     lbg: list,
     ubg: list,
     var_names: list[str],
+    row_names: list[str] | None = None,
 ) -> str:
     """
     Build the LP constraints string.
@@ -143,7 +170,9 @@ def _build_constraints(
 
     Rows with both bounds infinite are left out. A row without variable terms is left out if
     its constant satisfies its bounds, and otherwise written against ``LP_ZERO_VAR`` (fixed to 0
-    by an extra row) so the file stays infeasible.
+    by an extra row) so the file stays infeasible. With ``row_names``, each line is labelled
+    with its LP-safe row name: ``__lb`` / ``__ub`` for the two lines of a range row and
+    ``__d{n}`` for repeated names.
 
     Note: constraint lines are not wrapped and may exceed the LP format 255-character
     line limit for problems with many variables. Use shorter variable names if needed.
@@ -154,6 +183,7 @@ def _build_constraints(
         lbg: Lower bounds on each constraint row (``-inf`` for one-sided upper bounds).
         ubg: Upper bounds on each constraint row (``+inf`` for one-sided lower bounds).
         var_names: Human-readable name for each element of x.
+        row_names: Optional name for each row of g.
 
     Returns:
         Indented constraints string ready to follow the ``Subject To`` header
@@ -169,7 +199,7 @@ def _build_constraints(
 
     lbg = np.array(ca.veccat(*lbg))[:, 0]
     ubg = np.array(ca.veccat(*ubg))[:, 0]
-    _check_writable_bounds(lbg, ubg, "constraint", None)
+    _check_writable_bounds(lbg, ubg, "constraint", row_names)
     A_csc = A.tocsc()
     A_coo = A_csc.tocoo()
     b = np.array(b)[:, 0]
@@ -177,7 +207,7 @@ def _build_constraints(
     if len(nonfinite_rows):
         raise ValueError(
             "Cannot export LP file: constraint rows have a non-finite constant term: "
-            f"{_describe(nonfinite_rows, None)}."
+            f"{_describe(nonfinite_rows, row_names)}."
         )
 
     constraints = [[] for _ in range(A.shape[0])]
@@ -185,7 +215,8 @@ def _build_constraints(
         if abs(c) > LP_COEFF_EPSILON:
             constraints[i].extend(["+" if c > 0 else "-", f"{abs(c):.15g}", var_names[j]])
 
-    constraints_str_list = []
+    labels = None if row_names is None else [_sanitize_lp_name(n) for n in row_names]
+    lines = []  # (label, line); the label is "" without row names
     vacuous_rows = []
     infeasible_constant_rows = []
     for i, cur_constr in enumerate(constraints):
@@ -207,35 +238,38 @@ def _build_constraints(
             infeasible_constant_rows.append(i)
             c_str = LP_ZERO_VAR
 
+        label = labels[i] if labels is not None else ""
         if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
-            constraint_line = f"{c_str} = {lb - b_i:.15g}"
+            lines.append((label, f"{c_str} = {lb - b_i:.15g}"))
         elif np.isfinite(lb) and np.isfinite(ub):
             # Range constraint: lb <= expr <= ub. We do not use the LP ``Ranges``
             # section; we express this as two separate inequalities instead.
-            constraints_str_list.append(f"{c_str} >= {lb - b_i:.15g}")
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
+            lines.append((label and f"{label}__lb", f"{c_str} >= {lb - b_i:.15g}"))
+            lines.append((label and f"{label}__ub", f"{c_str} <= {ub - b_i:.15g}"))
         elif np.isfinite(lb):
-            constraint_line = f"{c_str} >= {lb - b_i:.15g}"
+            lines.append((label, f"{c_str} >= {lb - b_i:.15g}"))
         else:
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
-        constraints_str_list.append(constraint_line)
+            lines.append((label, f"{c_str} <= {ub - b_i:.15g}"))
     if infeasible_constant_rows:
-        constraints_str_list.append(f"{LP_ZERO_VAR} = 0")
+        lines.append((LP_ZERO_VAR if labels is not None else "", f"{LP_ZERO_VAR} = 0"))
         logger.warning(
             "LP export: %d constraint row(s) reduce to a constant that violates their bounds, "
             "so the problem is infeasible: %s.",
             len(infeasible_constant_rows),
-            _describe(infeasible_constant_rows, None),
+            _describe(infeasible_constant_rows, row_names),
         )
     if vacuous_rows:
         logger.info(
             "LP export: left out %d constraint row(s) with both bounds infinite: %s.",
             len(vacuous_rows),
-            _describe(vacuous_rows, None),
+            _describe(vacuous_rows, row_names),
         )
-    if not constraints_str_list:
+    if not lines:
         return ""
-    return "  " + "\n  ".join(constraints_str_list)
+    if labels is not None:
+        unique = _deduplicate([label for label, _ in lines])
+        lines = [(label, line) for label, (_, line) in zip(unique, lines, strict=True)]
+    return "  " + "\n  ".join(f"{label}: {line}" if label else line for label, line in lines)
 
 
 def _build_bounds(

@@ -2173,6 +2173,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         lbx: list,
         ubx: list,
         discrete: list[bool],
+        g_names: list[str] | None = None,
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
@@ -2192,6 +2193,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             lbg, ubg: Lower/upper bounds on constraints.
             lbx, ubx: Lower/upper bounds on variables.
             discrete: Boolean array indicating discrete variables.
+            g_names: Optional label per row of g, written as LP row names; see
+                :attr:`track_constraint_names`.
 
         Raises:
             ValueError: If the problem has a non-affine objective or constraints, uses
@@ -2219,7 +2222,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         var_names = _sanitize_var_names(self._collint_variable_indices_as_lists, x.shape[0])
         obj_str = _build_objective(f, x, var_names)
-        constr_str = _build_constraints(g, x, lbg, ubg, var_names)
+        constr_str = _build_constraints(g, x, lbg, ubg, var_names, g_names)
         bounds_str, binary_vars, general_vars = _build_bounds(var_names, lbx, ubx, discrete)
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")

@@ -656,6 +656,19 @@ class TestExportLP(unittest.TestCase):
         self.assertRegex(bounds_section, r"x__t\d+__m0")
         self.assertRegex(bounds_section, r"x__t\d+__m1")
 
+    def test_lp_export_labels_rows(self):
+        class Model(LinearModel):
+            track_constraint_names = True
+
+        (content,) = _exported_lp_files(Model)
+        self.assertRegex(content, r"(?m)^  initial_residual_0: ")
+        collocation_rows = re.findall(r"(?m)^  collocation_eq\d+__t(\d+): (.*)$", content)
+        self.assertTrue(collocation_rows)
+        for t, row in collocation_rows:
+            # A collocation row couples the states at its time index and the one before
+            times = set(re.findall(r"__t(\d+)\b", row))
+            self.assertLessEqual(times, {t, str(int(t) - 1)}, row)
+
     def test_lp_export_rejects_invalid_problems(self):
         """Export must raise ValueError for non-affine or unsupported problems.
 
@@ -754,6 +767,10 @@ class _HiGHSMixin:
 
 class HiGHSLinearModel(_HiGHSMixin, LinearModel):
     pass
+
+
+class HiGHSLabelledLinearModel(HiGHSLinearModel):
+    track_constraint_names = True
 
 
 class _XAtHalfGoal(Goal):
@@ -869,3 +886,23 @@ class TestLPRoundTrip(unittest.TestCase):
                 _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
                 status, _ = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
                 self.assertEqual(status, "Infeasible")
+
+    def test_labelled_linear_model(self):
+        self.assert_round_trip(HiGHSLabelledLinearModel)
+
+    def test_row_labels_are_read_back(self):
+        X = ca.SX.sym("X", 1)
+        g = ca.vertcat(*[k * X[0] for k in range(1, 6)])
+        names = ["eq", "range", "\\a b<=c", ".1st", "range__lb"]
+        constraints = _build_constraints(
+            g, X, [1.0, 0.0, 0.0, 0.0, 0.0], [1.0, 2.0, np.inf, np.inf, np.inf], ["x0"], names
+        )
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file("t.lp", "  x0", constraints, "  0 <= x0 <= 10", [], [], output_folder)
+            h = highspy.Highs()
+            h.setOptionValue("output_flag", False)
+            h.readModel(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(
+            list(h.getLp().row_names_),
+            ["eq", "range__lb__d0", "range__ub", "_a_b__c", "_.1st", "range__lb__d1"],
+        )
