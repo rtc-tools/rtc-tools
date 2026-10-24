@@ -266,9 +266,9 @@ def _sanitize_var_names(
     """
     Build LP-compatible variable names for every slot in the combined decision vector.
 
-    A variable is *shared* when every ensemble member maps it to the exact same
-    slot indices.  Shared variables receive no member suffix; per-member variables
-    get a ``__m{i}`` suffix (e.g. ``x__t3__m0``).
+    A slot is *shared* when every ensemble member maps it to the same variable and local
+    index. Shared slots receive no member suffix; other slots get the ``__m{i}`` suffix of
+    the lowest member using them (e.g. ``x__t3__m0``).
 
     Naming scheme:
     - Shared, multi-slot variable: ``"{name}__t{local_index}"``
@@ -294,52 +294,29 @@ def _sanitize_var_names(
         List of length ``num_total`` mapping each slot index to its LP variable name.
         Every slot is guaranteed to be filled.
     """
-    # Single pass over variables: for each variable, determine whether its slots are shared
-    # (identical slot list across all members) or per-member, then write names directly.
-    # Sharing is checked at the slot level using numpy array equality, which correctly
-    # handles the ControlTreeMixin partial-sharing case (same variable name, different
-    # slot lists per member after branching).
-    var_names = [None] * num_total
-    all_names = sorted(set().union(*(d.keys() for d in indices_per_member)))
-    for name in all_names:
-        member_slots = {
-            m: np.array(indices_per_member[m][name], dtype=np.int32)
-            for m in range(len(indices_per_member))
-            if name in indices_per_member[m]
-        }
-
-        # Check if all members that have this variable share the exact same slots.
-        slots_list = list(member_slots.values())
-        shared = len(member_slots) == len(indices_per_member) and all(
-            np.array_equal(slots_list[0], s) for s in slots_list[1:]
-        )
-
-        if shared:
-            slots = slots_list[0]
-            n_slots = len(slots)
+    claims = {}  # slot -> {name without member suffix: members using it}
+    for m, indices in enumerate(indices_per_member):
+        for name, slots in indices.items():
+            slots = np.atleast_1d(slots)
             for local_i, idx in enumerate(slots):
-                var_names[int(idx)] = f"{name}__t{local_i}" if n_slots > 1 else name
-        else:
-            # Per-member or partially shared: warn if different names map to the same slot
-            # (indicates a bug in discretize_controls/discretize_states or a mixin override).
-            for m, slots in member_slots.items():
-                n_slots = len(slots)
-                for local_i, idx in enumerate(slots):
-                    idx = int(idx)
-                    existing = var_names[idx]
-                    if existing is not None and not existing.endswith(f"__m{m}"):
-                        logger.warning(
-                            "Index slot %d maps to different variable names across ensemble "
-                            "members; this indicates a bug in discretize_controls() or "
-                            "discretize_states() (possibly a mixin override). "
-                            "Proceeding with member %d's name (%r); "
-                            "the exported LP file may be incorrect.",
-                            idx,
-                            m,
-                            name,
-                        )
-                    t_part = f"__t{local_i}" if n_slots > 1 else ""
-                    var_names[idx] = f"{name}{t_part}__m{m}"
+                base = f"{name}__t{local_i}" if len(slots) > 1 else name
+                claims.setdefault(int(idx), {}).setdefault(base, []).append(m)
+
+    var_names = [None] * num_total
+    conflicting_slots = []
+    for idx, by_base in claims.items():
+        base, members = next(iter(by_base.items()))
+        shared = len(members) == len(indices_per_member)
+        var_names[idx] = base if shared else f"{base}__m{members[0]}"
+        if len(by_base) > 1:
+            conflicting_slots.append(idx)
+    if conflicting_slots:
+        logger.warning(
+            "Decision vector slots %s map to different variable names across ensemble "
+            "members; this indicates a bug in discretize_controls() or discretize_states() "
+            "(possibly a mixin override). The exported LP file may be incorrect.",
+            conflicting_slots[:10],
+        )
 
     for i in range(num_total):
         if var_names[i] is None:

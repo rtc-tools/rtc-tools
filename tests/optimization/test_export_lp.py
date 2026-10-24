@@ -22,6 +22,7 @@ from rtctools._internal.casadi_to_lp import (
 from rtctools.optimization.collocated_integrated_optimization_problem import (
     CollocatedIntegratedOptimizationProblem,
 )
+from rtctools.optimization.control_tree_mixin import ControlTreeMixin
 from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 from rtctools.optimization.optimization_problem import OptimizationProblem
@@ -420,8 +421,8 @@ class TestLPBuilders(unittest.TestCase):
 
     def test__sanitize_var_names(self):
         """_sanitize_var_names must assign __m{i} suffixes to per-member variables and omit
-        them for shared variables. Sharing is determined at variable level: if any member has
-        a different slot list, all slots of that variable get member suffixes."""
+        them for shared variables. Sharing is determined per slot: a slot gets no suffix only if
+        every member maps it to the same variable and local index."""
         cases = [
             (
                 "ensemble_shared_control",
@@ -480,6 +481,11 @@ class TestLPBuilders(unittest.TestCase):
                     self.assertEqual(
                         names[slot], expected_name, msg=f"case={case_name}, slot={slot}"
                     )
+
+    def test_sanitize_var_names_warns_on_slot_claimed_by_different_names(self):
+        with self.assertLogs("rtctools", "WARNING"):
+            names = _sanitize_var_names([{"a": [0]}, {"b": [0]}], 1)
+        self.assertEqual(names, ["a__m0"])
 
     def test_write_lp_file_no_overwrite(self):
         """_write_lp_file() must not overwrite an existing file; it appends a counter instead."""
@@ -788,6 +794,31 @@ class HiGHSGoalProgrammingModel(_HiGHSMixin, GoalProgrammingMixin, _BaseTestMode
         return [_XAtHalfMaxGoal(), _XAtHalfMinGoal()]
 
 
+class HiGHSControlTreeModel(ControlTreeMixin, HiGHSLinearModel):
+    """Three members sharing controls before branching at t = 0.5 (time steps 0 to 3)."""
+
+    @property
+    def ensemble_size(self):
+        return 3
+
+    def control_tree_options(self):
+        return {"forecast_variables": ["constant_input"], "branching_times": [0.5], "k": 3}
+
+    def constant_inputs(self, ensemble_member):
+        values = np.linspace(1.0 - 0.1 * ensemble_member, 0.5 + 0.1 * ensemble_member, 9)
+        return {"constant_input": Timeseries(self.times(), values)}
+
+
+def _exported_lp_files(model_class):
+    with _suppress_info_logging(), tempfile.TemporaryDirectory() as output_folder:
+        model_class(output_folder=output_folder).optimize()
+        contents = []
+        for lp_file in sorted(os.listdir(output_folder)):
+            with open(os.path.join(output_folder, lp_file)) as f:
+                contents.append(f.read())
+    return contents
+
+
 def _solve_lp_with_highs(path):
     h = highspy.Highs()
     h.setOptionValue("output_flag", False)
@@ -823,3 +854,14 @@ class TestLPRoundTrip(unittest.TestCase):
             status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
         self.assertEqual(status, "Optimal")
         self.assertEqual(objective, -100.0)
+
+    def test_control_tree(self):
+        self.assert_round_trip(HiGHSControlTreeModel)
+
+    def test_control_tree_names_shared_slots_without_member_suffix(self):
+        (content,) = _exported_lp_files(HiGHSControlTreeModel)
+        self.assertEqual(set(re.findall(r"\bu__t(\d)\b(?!__m)", content)), {"0", "1", "2", "3"})
+        self.assertEqual(
+            set(re.findall(r"\bu__t(\d)__m(\d)\b", content)),
+            {(str(t), str(m)) for t in range(4, 9) for m in range(3)},
+        )
