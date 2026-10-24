@@ -138,6 +138,8 @@ def _build_constraints(
     lines depending on its bounds.  Range constraints (finite lb and ub, lb != ub)
     are split into two separate inequalities; the LP ``Ranges`` section is not used.
 
+    Rows with both bounds infinite are left out.
+
     Note: constraint lines are not wrapped and may exceed the LP format 255-character
     line limit for problems with many variables. Use shorter variable names if needed.
 
@@ -180,8 +182,12 @@ def _build_constraints(
             constraints[i].extend(["+" if c > 0 else "-", f"{abs(c):.15g}", var_names[j]])
 
     constraints_str_list = []
+    vacuous_rows = []
     for i, cur_constr in enumerate(constraints):
         lb, ub, b_i = lbg[i], ubg[i], b[i]
+        if np.isneginf(lb) and np.isposinf(ub):
+            vacuous_rows.append(i)
+            continue
         if cur_constr:
             if cur_constr[0] == "-":
                 cur_constr[1] = "-" + cur_constr[1]
@@ -218,21 +224,16 @@ def _build_constraints(
             constraint_line = f"{c_str} <= {ub - b_i:.15g}"
         elif np.isfinite(lb):
             constraint_line = f"{c_str} >= {lb - b_i:.15g}"
-        elif np.isfinite(ub):
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
         else:
-            logger.warning(
-                "Constraint %d has no finite bound (lbg=%s, ubg=%s, b_i=%s). "
-                "Writing as '<= +Inf' for debugging; this constraint is vacuous.",
-                i,
-                lb,
-                ub,
-                b_i,
-            )
-            constraint_line = f"{c_str} <= {_format_lp_bound(ub)}"
+            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
         constraints_str_list.append(constraint_line)
+    if vacuous_rows:
+        logger.info(
+            "LP export: left out %d constraint row(s) with both bounds infinite: %s.",
+            len(vacuous_rows),
+            _describe(vacuous_rows, None),
+        )
     if not constraints_str_list:
-        # Every row was a skipped feasible constant: there are no constraints to write.
         return ""
     return "  " + "\n  ".join(constraints_str_list)
 
