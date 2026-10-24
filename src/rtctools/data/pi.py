@@ -8,6 +8,8 @@ import defusedxml.ElementTree as DefusedElementTree
 import numpy as np
 
 ns = {"fews": "http://www.wldelft.nl/fews", "pi": "http://www.wldelft.nl/fews/PI"}
+for prefix, uri in ns.items():
+    ET.register_namespace(prefix, uri)
 
 
 class Diag:
