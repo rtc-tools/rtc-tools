@@ -114,17 +114,15 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
     def constraints(self, ensemble_member):
         constraints = super().constraints(ensemble_member)
 
-        for constraint in self.__problem_constraints[ensemble_member]:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints.extend(self._gp_constraint_tuples(self.__problem_constraints[ensemble_member]))
         return constraints
 
     def path_constraints(self, ensemble_member):
         path_constraints = super().path_constraints(ensemble_member)
 
-        for constraint in self.__problem_path_constraints[ensemble_member]:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints.extend(
+            self._gp_constraint_tuples(self.__problem_path_constraints[ensemble_member])
+        )
         return path_constraints
 
     def __validate_goals(self, goals, is_path_goal):

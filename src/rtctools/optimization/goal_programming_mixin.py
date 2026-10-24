@@ -181,9 +181,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints.extend(self._gp_constraint_tuples(additional_constraints))
         return constraints
 
     def path_constraints(self, ensemble_member):
@@ -195,9 +193,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_path_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints.extend(self._gp_constraint_tuples(additional_path_constraints))
         return path_constraints
 
     def solver_options(self):
