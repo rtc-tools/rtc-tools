@@ -51,6 +51,9 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     #: Enable ensemble-specific bounds functionality
     ensemble_specific_bounds = False
 
+    #: Allow constraint tuples with a name as 4th element; see :meth:`constraints`
+    named_constraints = False
+
     def __init__(self, **kwargs):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
@@ -93,6 +96,18 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Transcribe problem
         discrete, lbx, ubx, lbg, ubg, x0, nlp = self.transcribe()
 
+        # Row labels are not part of the CasADi NLP; see track_constraint_names
+        g_names = nlp.pop("g_names", None)
+        if g_names is not None and len(g_names) != nlp["g"].size1():
+            logger.warning(
+                "transcribe() returned %d constraint labels for %d constraint rows; ignoring "
+                "them. A transcribe() override that adds rows to nlp['g'] must also extend "
+                "nlp['g_names'].",
+                len(g_names),
+                nlp["g"].size1(),
+            )
+            g_names = None
+
         # Create an NLP solver
         logger.debug("Collecting solver options")
 
@@ -130,7 +145,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             nlp["x"] = x_sx
 
             if export_lp:
-                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete)
+                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete, g_names)
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -188,6 +203,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             "ubg": ubg,
             "x0": x0,
             "nlp": nlp,
+            "g_names": g_names,
         }
         self.__lam_g = results.get("lam_g")
         self.__lam_x = results.get("lam_x")
@@ -254,6 +270,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         lbx: list,
         ubx: list,
         discrete: list[bool],
+        g_names: list[str] | None = None,
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
@@ -837,7 +854,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str | None]
+    ]:
         """
         Returns a list of constraints for the given ensemble member.
 
@@ -849,6 +869,11 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         :returns: A list of triples ``(f, m, M)``, with an :class:`MX` object representing
                   the constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds must be numbers.
+
+        With :attr:`named_constraints` enabled, a tuple may carry a name as 4th element,
+        ``(f, m, M, name)``, used as the label of the constraint's rows when these are
+        labelled (see ``track_constraint_names``), e.g. in an exported LP file. Lists may then
+        mix both lengths, so code reading them must accept either.
 
         Example::
 
@@ -867,7 +892,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def path_constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str | None]
+    ]:
         """
         Returns a list of path constraints.
 
@@ -881,6 +909,11 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         :returns: A list of triples ``(f, m, M)``, with an :class:`MX` object representing
                   the path constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds may be numbers or :class:`.Timeseries` objects.
+
+        With :attr:`named_constraints` enabled, a tuple may carry a name as 4th element,
+        ``(f, m, M, name)``, used as the label of the constraint's rows when these are
+        labelled (see ``track_constraint_names``), e.g. in an exported LP file. Lists may then
+        mix both lengths, so code reading them must accept either.
 
         Example::
 

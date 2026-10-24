@@ -1,6 +1,7 @@
 import logging
 import os
 import textwrap
+from collections import Counter
 
 import casadi as ca
 import numpy as np
@@ -15,6 +16,12 @@ LP_COEFF_EPSILON = 1e-10
 # separate from LP_COEFF_EPSILON (a coefficient-magnitude threshold) because this absorbs
 # floating-point noise in a scalar value-vs-bound comparison, a distinct concern.
 LP_FEASIBILITY_EPSILON = 1e-9
+
+# Variable fixed to 0 that stands in for the missing variable term of an infeasible constant row
+LP_ZERO_VAR = "__zero"
+
+# Characters LP readers reject in names; a backslash would start a comment
+_LP_FORBIDDEN_NAME_CHARS = str.maketrans(dict.fromkeys(" \t\r\n\\:+-*/^<>=()[]'\"#", "_"))
 
 logger = logging.getLogger("rtctools")
 
@@ -49,6 +56,46 @@ def _format_lp_bound(val: float) -> str:
     if np.isneginf(val):
         return "-Inf"
     return f"{val:.15g}"
+
+
+def _sanitize_lp_name(name: str) -> str:
+    """Replace characters LP readers reject, and prefix a leading digit or period."""
+    name = name.translate(_LP_FORBIDDEN_NAME_CHARS)
+    return f"_{name}" if name[:1].isdigit() or name[:1] == "." else name
+
+
+def _deduplicate(names: list[str]) -> list[str]:
+    """Append ``__d{n}`` to every occurrence of a repeated name, keeping all names unique."""
+    counts = Counter(names)
+    taken = set(names)
+    next_index = Counter()
+    result = []
+    for name in names:
+        if counts[name] > 1:
+            while (candidate := f"{name}__d{next_index[name]}") in taken:
+                next_index[name] += 1
+            taken.add(candidate)
+            name = candidate
+        result.append(name)
+    return result
+
+
+def _describe(indices, names: list[str] | None) -> str:
+    """List up to ten indices, by name if names are given."""
+    indices = list(indices)[:10]
+    return ", ".join(names[i] for i in indices) if names is not None else str(indices)
+
+
+def _check_writable_bounds(
+    lb: np.ndarray, ub: np.ndarray, kind: str, names: list[str] | None
+) -> None:
+    """Raise if a bound has no LP form: NaN, a lower bound of +inf or an upper bound of -inf."""
+    bad = np.flatnonzero(np.isnan(lb) | np.isnan(ub) | np.isposinf(lb) | np.isneginf(ub))
+    if len(bad):
+        raise ValueError(
+            f"Cannot export LP file: {len(bad)} {kind}(s) have a NaN bound, a lower bound of "
+            f"+inf or an upper bound of -inf: {_describe(bad, names)}."
+        )
 
 
 def _build_objective(f: ca.SX, x: ca.SX, var_names: list[str]) -> str:
@@ -112,6 +159,7 @@ def _build_constraints(
     lbg: list,
     ubg: list,
     var_names: list[str],
+    row_names: list[str] | None = None,
 ) -> str:
     """
     Build the LP constraints string.
@@ -119,6 +167,12 @@ def _build_constraints(
     Each constraint row ``g[i]`` is written as one or two inequality/equality
     lines depending on its bounds.  Range constraints (finite lb and ub, lb != ub)
     are split into two separate inequalities; the LP ``Ranges`` section is not used.
+
+    Rows with both bounds infinite are left out. A row without variable terms is left out if
+    its constant satisfies its bounds, and otherwise written against ``LP_ZERO_VAR`` (fixed to 0
+    by an extra row) so the file stays infeasible. With ``row_names``, each line is labelled
+    with its LP-safe row name: ``__lb`` / ``__ub`` for the two lines of a range row and
+    ``__d{n}`` for repeated names.
 
     Note: constraint lines are not wrapped and may exceed the LP format 255-character
     line limit for problems with many variables. Use shorter variable names if needed.
@@ -129,14 +183,15 @@ def _build_constraints(
         lbg: Lower bounds on each constraint row (``-inf`` for one-sided upper bounds).
         ubg: Upper bounds on each constraint row (``+inf`` for one-sided lower bounds).
         var_names: Human-readable name for each element of x.
+        row_names: Optional name for each row of g.
 
     Returns:
         Indented constraints string ready to follow the ``Subject To`` header
         in an LP file.
 
     Raises:
-        ValueError: If a constraint row has no variable terms and its constant value
-            violates its bounds, i.e. the problem is infeasible.
+        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`) or a
+            row has a non-finite constant term.
     """
     A, b = ca.linear_coeff(g, x)
     A = ca.sparsify(ca.DM(A))
@@ -144,18 +199,31 @@ def _build_constraints(
 
     lbg = np.array(ca.veccat(*lbg))[:, 0]
     ubg = np.array(ca.veccat(*ubg))[:, 0]
+    _check_writable_bounds(lbg, ubg, "constraint", row_names)
     A_csc = A.tocsc()
     A_coo = A_csc.tocoo()
     b = np.array(b)[:, 0]
+    nonfinite_rows = np.flatnonzero(~np.isfinite(b))
+    if len(nonfinite_rows):
+        raise ValueError(
+            "Cannot export LP file: constraint rows have a non-finite constant term: "
+            f"{_describe(nonfinite_rows, row_names)}."
+        )
 
     constraints = [[] for _ in range(A.shape[0])]
     for i, j, c in zip(A_coo.row, A_coo.col, A_coo.data, strict=True):
         if abs(c) > LP_COEFF_EPSILON:
             constraints[i].extend(["+" if c > 0 else "-", f"{abs(c):.15g}", var_names[j]])
 
-    constraints_str_list = []
+    labels = None if row_names is None else [_sanitize_lp_name(n) for n in row_names]
+    lines = []  # (label, line); the label is "" without row names
+    vacuous_rows = []
+    infeasible_constant_rows = []
     for i, cur_constr in enumerate(constraints):
         lb, ub, b_i = lbg[i], ubg[i], b[i]
+        if np.isneginf(lb) and np.isposinf(ub):
+            vacuous_rows.append(i)
+            continue
         if cur_constr:
             if cur_constr[0] == "-":
                 cur_constr[1] = "-" + cur_constr[1]
@@ -163,52 +231,45 @@ def _build_constraints(
         c_str = " ".join(cur_constr)
 
         if not c_str:
-            # Row has no variable terms: it reduces to the constant b_i. The LP format
-            # requires a variable term per row (a literal "0 = 0" is rejected by e.g.
-            # CPLEX). Current behavior: a feasible constant row (within bounds) is dropped;
-            # an infeasible one is the source of the model's infeasibility and must not be
-            # dropped (that would make the exported file feasible while the model is not),
-            # so we raise.
-            # TODO(RTCTOOLS-1512): instead of raising on an infeasible constant row,
-            # preserve it via a dummy variable fixed to 1 so an external solver reproduces
-            # the infeasibility during presolve.
             lb_ok = (not np.isfinite(lb)) or b_i >= lb - LP_FEASIBILITY_EPSILON
             ub_ok = (not np.isfinite(ub)) or b_i <= ub + LP_FEASIBILITY_EPSILON
-            if lb_ok and ub_ok:
+            if lb_ok and ub_ok and lb <= ub:
                 continue
-            side = "lower bound" if not lb_ok else "upper bound"
-            raise ValueError(
-                f"Violated constraint {i}: it reduces to the constant {b_i:.15g}, which "
-                f"violates its {side} (bounds [{_format_lp_bound(lb)}, {_format_lp_bound(ub)}]). "
-                f"The problem is infeasible."
-            )
+            infeasible_constant_rows.append(i)
+            c_str = LP_ZERO_VAR
 
+        label = labels[i] if labels is not None else ""
         if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
-            constraint_line = f"{c_str} = {lb - b_i:.15g}"
+            lines.append((label, f"{c_str} = {lb - b_i:.15g}"))
         elif np.isfinite(lb) and np.isfinite(ub):
             # Range constraint: lb <= expr <= ub. We do not use the LP ``Ranges``
             # section; we express this as two separate inequalities instead.
-            constraints_str_list.append(f"{c_str} >= {lb - b_i:.15g}")
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
+            lines.append((label and f"{label}__lb", f"{c_str} >= {lb - b_i:.15g}"))
+            lines.append((label and f"{label}__ub", f"{c_str} <= {ub - b_i:.15g}"))
         elif np.isfinite(lb):
-            constraint_line = f"{c_str} >= {lb - b_i:.15g}"
-        elif np.isfinite(ub):
-            constraint_line = f"{c_str} <= {ub - b_i:.15g}"
+            lines.append((label, f"{c_str} >= {lb - b_i:.15g}"))
         else:
-            logger.warning(
-                "Constraint %d has no finite bound (lbg=%s, ubg=%s, b_i=%s). "
-                "Writing as '<= +Inf' for debugging; this constraint is vacuous.",
-                i,
-                lb,
-                ub,
-                b_i,
-            )
-            constraint_line = f"{c_str} <= {_format_lp_bound(ub)}"
-        constraints_str_list.append(constraint_line)
-    if not constraints_str_list:
-        # Every row was a skipped feasible constant: there are no constraints to write.
+            lines.append((label, f"{c_str} <= {ub - b_i:.15g}"))
+    if infeasible_constant_rows:
+        lines.append((LP_ZERO_VAR if labels is not None else "", f"{LP_ZERO_VAR} = 0"))
+        logger.warning(
+            "LP export: %d constraint row(s) reduce to a constant that violates their bounds, "
+            "so the problem is infeasible: %s.",
+            len(infeasible_constant_rows),
+            _describe(infeasible_constant_rows, row_names),
+        )
+    if vacuous_rows:
+        logger.info(
+            "LP export: left out %d constraint row(s) with both bounds infinite: %s.",
+            len(vacuous_rows),
+            _describe(vacuous_rows, row_names),
+        )
+    if not lines:
         return ""
-    return "  " + "\n  ".join(constraints_str_list)
+    if labels is not None:
+        unique = _deduplicate([label for label, _ in lines])
+        lines = [(label, line) for label, (_, line) in zip(unique, lines, strict=True)]
+    return "  " + "\n  ".join(f"{label}: {line}" if label else line for label, line in lines)
 
 
 def _build_bounds(
@@ -223,7 +284,7 @@ def _build_bounds(
     Canonical bound forms emitted:
     - Both infinite: ``name Free``
     - Lower bound only: ``lb <= name``
-    - Upper bound only: ``name <= ub``
+    - Upper bound only: ``-Inf <= name <= ub`` (without ``-Inf`` the default lower bound is 0)
     - Both finite: ``lb <= name <= ub``
 
     Args:
@@ -237,7 +298,13 @@ def _build_bounds(
         is the indented bounds section (empty string when nothing to emit),
         ``binary_vars`` is the list of binary (0/1) variable names, and
         ``general_vars`` is the list of general integer variable names.
+
+    Raises:
+        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`).
     """
+    _check_writable_bounds(
+        np.asarray(lbx, dtype=float), np.asarray(ubx, dtype=float), "variable", var_names
+    )
     bounds_list = []
     binary_vars = []
     general_vars = []
@@ -251,7 +318,7 @@ def _build_bounds(
         if not np.isfinite(lb) and not np.isfinite(ub):
             bounds_list.append(f"{v} Free")
         elif not np.isfinite(lb):
-            bounds_list.append(f"{v} <= {_format_lp_bound(ub)}")
+            bounds_list.append(f"-Inf <= {v} <= {_format_lp_bound(ub)}")
         elif not np.isfinite(ub):
             bounds_list.append(f"{_format_lp_bound(lb)} <= {v}")
         else:
@@ -266,9 +333,9 @@ def _sanitize_var_names(
     """
     Build LP-compatible variable names for every slot in the combined decision vector.
 
-    A variable is *shared* when every ensemble member maps it to the exact same
-    slot indices.  Shared variables receive no member suffix; per-member variables
-    get a ``__m{i}`` suffix (e.g. ``x__t3__m0``).
+    A slot is *shared* when every ensemble member maps it to the same variable and local
+    index. Shared slots receive no member suffix; other slots get the ``__m{i}`` suffix of
+    the lowest member using them (e.g. ``x__t3__m0``).
 
     Naming scheme:
     - Shared, multi-slot variable: ``"{name}__t{local_index}"``
@@ -294,52 +361,29 @@ def _sanitize_var_names(
         List of length ``num_total`` mapping each slot index to its LP variable name.
         Every slot is guaranteed to be filled.
     """
-    # Single pass over variables: for each variable, determine whether its slots are shared
-    # (identical slot list across all members) or per-member, then write names directly.
-    # Sharing is checked at the slot level using numpy array equality, which correctly
-    # handles the ControlTreeMixin partial-sharing case (same variable name, different
-    # slot lists per member after branching).
-    var_names = [None] * num_total
-    all_names = sorted(set().union(*(d.keys() for d in indices_per_member)))
-    for name in all_names:
-        member_slots = {
-            m: np.array(indices_per_member[m][name], dtype=np.int32)
-            for m in range(len(indices_per_member))
-            if name in indices_per_member[m]
-        }
-
-        # Check if all members that have this variable share the exact same slots.
-        slots_list = list(member_slots.values())
-        shared = len(member_slots) == len(indices_per_member) and all(
-            np.array_equal(slots_list[0], s) for s in slots_list[1:]
-        )
-
-        if shared:
-            slots = slots_list[0]
-            n_slots = len(slots)
+    claims = {}  # slot -> {name without member suffix: members using it}
+    for m, indices in enumerate(indices_per_member):
+        for name, slots in indices.items():
+            slots = np.atleast_1d(slots)
             for local_i, idx in enumerate(slots):
-                var_names[int(idx)] = f"{name}__t{local_i}" if n_slots > 1 else name
-        else:
-            # Per-member or partially shared: warn if different names map to the same slot
-            # (indicates a bug in discretize_controls/discretize_states or a mixin override).
-            for m, slots in member_slots.items():
-                n_slots = len(slots)
-                for local_i, idx in enumerate(slots):
-                    idx = int(idx)
-                    existing = var_names[idx]
-                    if existing is not None and not existing.endswith(f"__m{m}"):
-                        logger.warning(
-                            "Index slot %d maps to different variable names across ensemble "
-                            "members; this indicates a bug in discretize_controls() or "
-                            "discretize_states() (possibly a mixin override). "
-                            "Proceeding with member %d's name (%r); "
-                            "the exported LP file may be incorrect.",
-                            idx,
-                            m,
-                            name,
-                        )
-                    t_part = f"__t{local_i}" if n_slots > 1 else ""
-                    var_names[idx] = f"{name}{t_part}__m{m}"
+                base = f"{name}__t{local_i}" if len(slots) > 1 else name
+                claims.setdefault(int(idx), {}).setdefault(base, []).append(m)
+
+    var_names = [None] * num_total
+    conflicting_slots = []
+    for idx, by_base in claims.items():
+        base, members = next(iter(by_base.items()))
+        shared = len(members) == len(indices_per_member)
+        var_names[idx] = base if shared else f"{base}__m{members[0]}"
+        if len(by_base) > 1:
+            conflicting_slots.append(idx)
+    if conflicting_slots:
+        logger.warning(
+            "Decision vector slots %s map to different variable names across ensemble "
+            "members; this indicates a bug in discretize_controls() or discretize_states() "
+            "(possibly a mixin override). The exported LP file may be incorrect.",
+            conflicting_slots[:10],
+        )
 
     for i in range(num_total):
         if var_names[i] is None:

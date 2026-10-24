@@ -181,9 +181,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints.extend(self._gp_constraint_tuples(additional_constraints))
         return constraints
 
     def path_constraints(self, ensemble_member):
@@ -195,9 +193,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__subproblem_path_soft_constraints[ensemble_member],
         )
 
-        for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints.extend(self._gp_constraint_tuples(additional_path_constraints))
         return path_constraints
 
     def solver_options(self):
@@ -250,6 +246,8 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         | ``scale_by_problem_size`` | ``bool``  | ``False``     |
         +---------------------------+-----------+---------------+
         | ``keep_soft_constraints`` | ``bool``  | ``False``     |
+        +---------------------------+-----------+---------------+
+        | ``constraint_names``      | ``bool``  | ``False``     |
         +---------------------------+-----------+---------------+
 
         Before turning a soft constraint of the goal programming algorithm into a hard constraint,
@@ -316,6 +314,12 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         constraint for the subsequent priorities (while in the False option this was the case only
         for the function of minimization goals).
 
+        If ``constraint_names`` is set to ``True``, the constraints that goal programming adds
+        carry a name, ``{GoalClass}_p{priority}``, which labels their rows when
+        ``track_constraint_names`` is set, e.g. in an exported LP file. This requires
+        ``named_constraints = True``, since it makes the lists returned by ``constraints()`` and
+        ``path_constraints()`` mix 3- and 4-tuples.
+
         :returns: A dictionary of goal programming options.
         """
 
@@ -331,6 +335,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         options["interior_distance"] = 1e-6
         options["scale_by_problem_size"] = False
         options["keep_soft_constraints"] = False
+        options["constraint_names"] = False
 
         # Define temporary variable to avoid infinite loop between
         # solver_options and goal_programming_options.
@@ -611,13 +616,14 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         options = self.goal_programming_options()
 
+        name = f"pareto_p{self._gp_current_priority}"
         if options["fix_minimized_values"]:
-            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True)
+            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True, name)
             self.check_collocation_linearity = False
             self.linear_collocation = False
         else:
             obj_val += options["constraint_relaxation"]
-            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True)
+            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True, name)
 
         # The goal works over all ensemble members, so we add it to the last
         # one, as at that point the inputs of all previous ensemble members
