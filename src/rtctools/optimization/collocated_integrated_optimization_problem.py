@@ -2299,12 +2299,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                 # Check that the lower bounds are not higher than the upper
                 # bounds. To avoid spam, we just log the first offending one per
-                # variable, not _all_ time steps.
-                if np.any(lbx[inds] > ubx[inds]):
-                    error_inds = np.where(lbx[inds] > ubx[inds])[0].tolist()
+                # variable, not _all_ time steps. Scalar variables have an int index.
+                lb_v, ub_v = np.atleast_1d(lbx[inds]), np.atleast_1d(ubx[inds])
+                if np.any(lb_v > ub_v):
+                    first = np.flatnonzero(lb_v > ub_v)[0]
+                    nominal_v = np.broadcast_to(nominal, lb_v.shape)
                     logger.error(
-                        f"Lower bound {lbx[inds][error_inds[0]] * nominal} is higher than "
-                        f"upper bound {ubx[inds][error_inds[0]] * nominal} for variable {variable}"
+                        f"Lower bound {lb_v[first] * nominal_v[first]} is higher than "
+                        f"upper bound {ub_v[first] * nominal_v[first]} for variable {variable}"
                     )
 
         return lbx, ubx
