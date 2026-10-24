@@ -16,6 +16,9 @@ LP_COEFF_EPSILON = 1e-10
 # floating-point noise in a scalar value-vs-bound comparison, a distinct concern.
 LP_FEASIBILITY_EPSILON = 1e-9
 
+# Variable fixed to 0 that stands in for the missing variable term of an infeasible constant row
+LP_ZERO_VAR = "__zero"
+
 logger = logging.getLogger("rtctools")
 
 # Note: the LP file is currently used for diagnostics/export only. Using it as a
@@ -138,7 +141,9 @@ def _build_constraints(
     lines depending on its bounds.  Range constraints (finite lb and ub, lb != ub)
     are split into two separate inequalities; the LP ``Ranges`` section is not used.
 
-    Rows with both bounds infinite are left out.
+    Rows with both bounds infinite are left out. A row without variable terms is left out if
+    its constant satisfies its bounds, and otherwise written against ``LP_ZERO_VAR`` (fixed to 0
+    by an extra row) so the file stays infeasible.
 
     Note: constraint lines are not wrapped and may exceed the LP format 255-character
     line limit for problems with many variables. Use shorter variable names if needed.
@@ -155,9 +160,8 @@ def _build_constraints(
         in an LP file.
 
     Raises:
-        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`), a
-            row has a non-finite constant term, or a row has no variable terms and its
-            constant value violates its bounds, i.e. the problem is infeasible.
+        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`) or a
+            row has a non-finite constant term.
     """
     A, b = ca.linear_coeff(g, x)
     A = ca.sparsify(ca.DM(A))
@@ -183,6 +187,7 @@ def _build_constraints(
 
     constraints_str_list = []
     vacuous_rows = []
+    infeasible_constant_rows = []
     for i, cur_constr in enumerate(constraints):
         lb, ub, b_i = lbg[i], ubg[i], b[i]
         if np.isneginf(lb) and np.isposinf(ub):
@@ -195,25 +200,12 @@ def _build_constraints(
         c_str = " ".join(cur_constr)
 
         if not c_str:
-            # Row has no variable terms: it reduces to the constant b_i. The LP format
-            # requires a variable term per row (a literal "0 = 0" is rejected by e.g.
-            # CPLEX). Current behavior: a feasible constant row (within bounds) is dropped;
-            # an infeasible one is the source of the model's infeasibility and must not be
-            # dropped (that would make the exported file feasible while the model is not),
-            # so we raise.
-            # TODO(RTCTOOLS-1512): instead of raising on an infeasible constant row,
-            # preserve it via a dummy variable fixed to 1 so an external solver reproduces
-            # the infeasibility during presolve.
             lb_ok = (not np.isfinite(lb)) or b_i >= lb - LP_FEASIBILITY_EPSILON
             ub_ok = (not np.isfinite(ub)) or b_i <= ub + LP_FEASIBILITY_EPSILON
-            if lb_ok and ub_ok:
+            if lb_ok and ub_ok and lb <= ub:
                 continue
-            side = "lower bound" if not lb_ok else "upper bound"
-            raise ValueError(
-                f"Violated constraint {i}: it reduces to the constant {b_i:.15g}, which "
-                f"violates its {side} (bounds [{_format_lp_bound(lb)}, {_format_lp_bound(ub)}]). "
-                f"The problem is infeasible."
-            )
+            infeasible_constant_rows.append(i)
+            c_str = LP_ZERO_VAR
 
         if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
             constraint_line = f"{c_str} = {lb - b_i:.15g}"
@@ -227,6 +219,14 @@ def _build_constraints(
         else:
             constraint_line = f"{c_str} <= {ub - b_i:.15g}"
         constraints_str_list.append(constraint_line)
+    if infeasible_constant_rows:
+        constraints_str_list.append(f"{LP_ZERO_VAR} = 0")
+        logger.warning(
+            "LP export: %d constraint row(s) reduce to a constant that violates their bounds, "
+            "so the problem is infeasible: %s.",
+            len(infeasible_constant_rows),
+            _describe(infeasible_constant_rows, None),
+        )
     if vacuous_rows:
         logger.info(
             "LP export: left out %d constraint row(s) with both bounds infinite: %s.",

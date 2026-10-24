@@ -384,37 +384,19 @@ class TestLPBuilders(unittest.TestCase):
             result = _build_constraints(g, X, [-np.inf], [np.inf], names)
         self.assertEqual(result.strip(), "")
 
-    def test_build_constraints_constant_row_infeasible_raises(self):
-        """A constant constraint that violates its bounds is infeasible and must raise.
-
-        Covers both the equality-bound violation and a one-sided (upper-only) violation.
-        """
-        # Equality bounds [1, 1] with constant 0 -> violates lower side (row index 1).
-        _, g, X, names = self._make_fg(
-            2, lambda X: X[0], lambda X: ca.vertcat(X[0] + X[1], X[0] - X[0])
-        )
-        with self.assertRaisesRegex(ValueError, r"constraint 1.*lower bound.*infeasible"):
-            _build_constraints(g, X, [0.0, 1.0], [10.0, 1.0], names)
-
-        # One-sided: lb=-inf, ub=5, constant 10 -> violates upper side only (row index 0).
-        _, g2, X2, names2 = self._make_fg(1, lambda X: X[0], lambda X: X[0] - X[0] + 10.0)
-        with self.assertRaisesRegex(ValueError, r"constraint 0.*upper bound.*infeasible"):
-            _build_constraints(g2, X2, [-np.inf], [5.0], names2)
-
     def test_build_constraints_constant_row_feasibility_tolerance(self):
         """The feasibility check tolerates noise up to LP_FEASIBILITY_EPSILON, not beyond."""
-        # Just inside the lower bound (within tolerance): feasible -> skipped.
         _, g, X, names = self._make_fg(
             1, lambda X: X[0], lambda X: X[0] - X[0] + (1.0 - LP_FEASIBILITY_EPSILON / 2)
         )
         self.assertEqual(_build_constraints(g, X, [1.0], [np.inf], names).strip(), "")
 
-        # Clearly below the lower bound (beyond tolerance): infeasible -> raises.
         _, g2, X2, names2 = self._make_fg(
             1, lambda X: X[0], lambda X: X[0] - X[0] + (1.0 - 2 * LP_FEASIBILITY_EPSILON)
         )
-        with self.assertRaisesRegex(ValueError, r"lower bound.*infeasible"):
-            _build_constraints(g2, X2, [1.0], [np.inf], names2)
+        with self.assertLogs("rtctools", "WARNING"):
+            result = _build_constraints(g2, X2, [1.0], [np.inf], names2)
+        self.assertIn("__zero >=", result)
 
     def test_build_constraints_all_rows_skipped_returns_empty(self):
         """If every row is a feasible constant, the result is empty (so the writer omits
@@ -868,3 +850,22 @@ class TestLPRoundTrip(unittest.TestCase):
             set(re.findall(r"\bu__t(\d)__m(\d)\b", content)),
             {(str(t), str(m)) for t in range(4, 9) for m in range(3)},
         )
+
+    def test_infeasible_constant_rows_stay_infeasible(self):
+        X = ca.SX.sym("X", 1)
+        cases = {
+            "lower": (0.5, np.inf),
+            "upper": (-np.inf, -0.5),
+            "equality": (0.5, 0.5),
+            "range": (0.25, 0.75),
+            "crossed": (0.75, 0.25),
+        }
+        for case, (lb, ub) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as output_folder:
+                g = ca.vertcat(X[0], ca.SX(0.0))
+                with self.assertLogs("rtctools", "WARNING"):
+                    constraints = _build_constraints(g, X, [0.0, lb], [1.0, ub], ["x0"])
+                bounds, _, _ = _build_bounds(["x0"], [-10.0], [10.0], [False])
+                _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
+                status, _ = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+                self.assertEqual(status, "Infeasible")
