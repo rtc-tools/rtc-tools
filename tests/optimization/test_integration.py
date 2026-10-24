@@ -346,6 +346,16 @@ class TestConflictingBounds(TestCase):
 
         self.assertIn("Lower bound 0.5 is higher than upper bound 0.3 for variable u", cm.output[0])
 
+    def test_conflicting_bounds_on_scalar_variable(self):
+        class Model(SingleShootingModel):
+            def bounds(self):
+                return {**super().bounds(), "x": (1.0, 0.0)}  # x is an integrated state
+
+        with self.assertRaises(RuntimeError), self.assertLogs(level="ERROR") as cm:
+            Model().optimize()
+
+        self.assertIn("Lower bound 1.0 is higher than upper bound 0.0 for variable x", cm.output[0])
+
 
 class SingleShootingEnsembleStatesBoundsModel(SingleShootingEnsembleModel):
     ensemble_specific_bounds = True
