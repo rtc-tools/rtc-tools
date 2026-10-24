@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 import casadi as ca
+import highspy
 import numpy as np
 from pymoca.backends.casadi.alias_relation import AliasRelation
 
@@ -21,6 +22,7 @@ from rtctools._internal.casadi_to_lp import (
 from rtctools.optimization.collocated_integrated_optimization_problem import (
     CollocatedIntegratedOptimizationProblem,
 )
+from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 from rtctools.optimization.optimization_problem import OptimizationProblem
 from rtctools.optimization.timeseries import Timeseries
@@ -743,3 +745,71 @@ class TestExportLP(unittest.TestCase):
 
             lp_files = [f for f in os.listdir(output_folder) if f.endswith(".lp")]
             self.assertEqual(len(lp_files), 0)
+
+
+# Round trip: re-solving the exported LP with standalone HiGHS
+
+
+class _HiGHSMixin:
+    """Solve with HiGHS through CasADi, so both sides of a round trip use the same solver."""
+
+    def solver_options(self):
+        options = super().solver_options()
+        options["casadi_solver"] = ca.qpsol
+        options["solver"] = "highs"
+        options["highs"] = {"output_flag": False}
+        return options
+
+
+class HiGHSLinearModel(_HiGHSMixin, LinearModel):
+    pass
+
+
+class _XAtHalfGoal(Goal):
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+
+    function_range = (-5.0, 5.0)
+    order = 1  # keeps the transcribed problem affine
+
+
+class _XAtHalfMaxGoal(_XAtHalfGoal):
+    priority = 1
+    target_max = -2.0  # unreachable, so the priority-1 optimum is non-trivial
+
+
+class _XAtHalfMinGoal(_XAtHalfGoal):
+    priority = 2
+    target_min = 3.0  # conflicts with priority 1
+
+
+class HiGHSGoalProgrammingModel(_HiGHSMixin, GoalProgrammingMixin, _BaseTestModel):
+    def goals(self):
+        return [_XAtHalfMaxGoal(), _XAtHalfMinGoal()]
+
+
+def _solve_lp_with_highs(path):
+    h = highspy.Highs()
+    h.setOptionValue("output_flag", False)
+    h.readModel(path)
+    h.run()
+    return h.modelStatusToString(h.getModelStatus()), h.getObjectiveValue()
+
+
+class TestLPRoundTrip(unittest.TestCase):
+    """HiGHS on the last exported LP file must reproduce the optimum RTC-Tools found."""
+
+    def assert_round_trip(self, model_class):
+        with _suppress_info_logging(), tempfile.TemporaryDirectory() as output_folder:
+            problem = model_class(output_folder=output_folder)
+            problem.optimize()
+            last_lp = sorted(f for f in os.listdir(output_folder) if f.endswith(".lp"))[-1]
+            status, objective = _solve_lp_with_highs(os.path.join(output_folder, last_lp))
+        self.assertEqual(status, "Optimal")
+        self.assertAlmostEqual(objective, problem.objective_value, places=5)
+
+    def test_linear_model(self):
+        self.assert_round_trip(HiGHSLinearModel)
+
+    def test_goal_programming_keeps_previous_priority(self):
+        self.assert_round_trip(HiGHSGoalProgrammingModel)
