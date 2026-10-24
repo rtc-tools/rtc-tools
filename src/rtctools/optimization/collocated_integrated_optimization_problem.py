@@ -2143,8 +2143,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             discrete: Boolean array indicating discrete variables.
 
         Raises:
-            ValueError: If the problem has a non-affine objective or constraints, or
-                uses non-linear collocation (``linear_collocation=False``).
+            ValueError: If the problem has a non-affine objective or constraints, uses
+                non-linear collocation (``linear_collocation=False``), or has a bound or
+                constant term that an LP file cannot hold (NaN, a lower bound of +inf, an
+                upper bound of -inf, a non-finite constant).
         """
         if getattr(self, "_dae_linear_collocation", self.linear_collocation) is False:
             raise ValueError(

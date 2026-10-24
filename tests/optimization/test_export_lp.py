@@ -349,6 +349,17 @@ class TestLPBuilders(unittest.TestCase):
         )
         self.assertIn("+Inf", result)
 
+    def test_unwritable_bounds_raise(self):
+        _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: X[0])
+        for lb, ub in [(np.nan, 1.0), (np.inf, np.inf), (-np.inf, -np.inf)]:
+            with self.subTest(lb=lb, ub=ub):
+                with self.assertRaisesRegex(ValueError, "Cannot export"):
+                    _build_constraints(g, X, [lb], [ub], names)
+                with self.assertRaisesRegex(ValueError, "Cannot export"):
+                    _build_bounds(names, [lb], [ub], [False])
+        with self.assertRaisesRegex(ValueError, "non-finite constant"):
+            _build_constraints(X[0] + np.inf, X, [0.0], [1.0], names)
+
     def test_build_constraints_constant_row_feasible_is_skipped(self):
         """A constant constraint (no variable terms) within bounds must be omitted.
 
