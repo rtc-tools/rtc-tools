@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 import casadi as ca
+import highspy
 import numpy as np
 from pymoca.backends.casadi.alias_relation import AliasRelation
 
@@ -21,6 +22,8 @@ from rtctools._internal.casadi_to_lp import (
 from rtctools.optimization.collocated_integrated_optimization_problem import (
     CollocatedIntegratedOptimizationProblem,
 )
+from rtctools.optimization.control_tree_mixin import ControlTreeMixin
+from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 from rtctools.optimization.optimization_problem import OptimizationProblem
 from rtctools.optimization.timeseries import Timeseries
@@ -333,18 +336,21 @@ class TestLPBuilders(unittest.TestCase):
         self.assertRegex(result, r">=\s*1")
         self.assertRegex(result, r"<=\s*3")
 
-    def test_build_constraints_no_finite_bound_warns_and_emits(self):
-        """A vacuous constraint (no finite bound) must emit a warning and write '<= +Inf'."""
+    def test_build_constraints_vacuous_row_is_left_out(self):
+        _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: ca.vertcat(X[0], 2 * X[0]))
+        result = _build_constraints(g, X, [-np.inf, 1.0], [np.inf, np.inf], names)
+        self.assertEqual(result.strip(), "2 x0 >= 1")
+
+    def test_unwritable_bounds_raise(self):
         _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: X[0])
-        with self.assertLogs("rtctools", level="WARNING") as log_ctx:
-            result = _build_constraints(g, X, [-np.inf], [np.inf], names)
-        self.assertTrue(
-            any(
-                "vacuous" in msg.lower() or "no finite bound" in msg.lower()
-                for msg in log_ctx.output
-            )
-        )
-        self.assertIn("+Inf", result)
+        for lb, ub in [(np.nan, 1.0), (np.inf, np.inf), (-np.inf, -np.inf)]:
+            with self.subTest(lb=lb, ub=ub):
+                with self.assertRaisesRegex(ValueError, "Cannot export"):
+                    _build_constraints(g, X, [lb], [ub], names)
+                with self.assertRaisesRegex(ValueError, "Cannot export"):
+                    _build_bounds(names, [lb], [ub], [False])
+        with self.assertRaisesRegex(ValueError, "non-finite constant"):
+            _build_constraints(X[0] + np.inf, X, [0.0], [1.0], names)
 
     def test_build_constraints_constant_row_feasible_is_skipped(self):
         """A constant constraint (no variable terms) within bounds must be omitted.
@@ -378,37 +384,19 @@ class TestLPBuilders(unittest.TestCase):
             result = _build_constraints(g, X, [-np.inf], [np.inf], names)
         self.assertEqual(result.strip(), "")
 
-    def test_build_constraints_constant_row_infeasible_raises(self):
-        """A constant constraint that violates its bounds is infeasible and must raise.
-
-        Covers both the equality-bound violation and a one-sided (upper-only) violation.
-        """
-        # Equality bounds [1, 1] with constant 0 -> violates lower side (row index 1).
-        _, g, X, names = self._make_fg(
-            2, lambda X: X[0], lambda X: ca.vertcat(X[0] + X[1], X[0] - X[0])
-        )
-        with self.assertRaisesRegex(ValueError, r"constraint 1.*lower bound.*infeasible"):
-            _build_constraints(g, X, [0.0, 1.0], [10.0, 1.0], names)
-
-        # One-sided: lb=-inf, ub=5, constant 10 -> violates upper side only (row index 0).
-        _, g2, X2, names2 = self._make_fg(1, lambda X: X[0], lambda X: X[0] - X[0] + 10.0)
-        with self.assertRaisesRegex(ValueError, r"constraint 0.*upper bound.*infeasible"):
-            _build_constraints(g2, X2, [-np.inf], [5.0], names2)
-
     def test_build_constraints_constant_row_feasibility_tolerance(self):
         """The feasibility check tolerates noise up to LP_FEASIBILITY_EPSILON, not beyond."""
-        # Just inside the lower bound (within tolerance): feasible -> skipped.
         _, g, X, names = self._make_fg(
             1, lambda X: X[0], lambda X: X[0] - X[0] + (1.0 - LP_FEASIBILITY_EPSILON / 2)
         )
         self.assertEqual(_build_constraints(g, X, [1.0], [np.inf], names).strip(), "")
 
-        # Clearly below the lower bound (beyond tolerance): infeasible -> raises.
         _, g2, X2, names2 = self._make_fg(
             1, lambda X: X[0], lambda X: X[0] - X[0] + (1.0 - 2 * LP_FEASIBILITY_EPSILON)
         )
-        with self.assertRaisesRegex(ValueError, r"lower bound.*infeasible"):
-            _build_constraints(g2, X2, [1.0], [np.inf], names2)
+        with self.assertLogs("rtctools", "WARNING"):
+            result = _build_constraints(g2, X2, [1.0], [np.inf], names2)
+        self.assertIn("__zero >=", result)
 
     def test_build_constraints_all_rows_skipped_returns_empty(self):
         """If every row is a feasible constant, the result is empty (so the writer omits
@@ -418,8 +406,8 @@ class TestLPBuilders(unittest.TestCase):
 
     def test__sanitize_var_names(self):
         """_sanitize_var_names must assign __m{i} suffixes to per-member variables and omit
-        them for shared variables. Sharing is determined at variable level: if any member has
-        a different slot list, all slots of that variable get member suffixes."""
+        them for shared variables. Sharing is determined per slot: a slot gets no suffix only if
+        every member maps it to the same variable and local index."""
         cases = [
             (
                 "ensemble_shared_control",
@@ -478,6 +466,11 @@ class TestLPBuilders(unittest.TestCase):
                     self.assertEqual(
                         names[slot], expected_name, msg=f"case={case_name}, slot={slot}"
                     )
+
+    def test_sanitize_var_names_warns_on_slot_claimed_by_different_names(self):
+        with self.assertLogs("rtctools", "WARNING"):
+            names = _sanitize_var_names([{"a": [0]}, {"b": [0]}], 1)
+        self.assertEqual(names, ["a__m0"])
 
     def test_write_lp_file_no_overwrite(self):
         """_write_lp_file() must not overwrite an existing file; it appends a counter instead."""
@@ -743,3 +736,136 @@ class TestExportLP(unittest.TestCase):
 
             lp_files = [f for f in os.listdir(output_folder) if f.endswith(".lp")]
             self.assertEqual(len(lp_files), 0)
+
+
+# Round trip: re-solving the exported LP with standalone HiGHS
+
+
+class _HiGHSMixin:
+    """Solve with HiGHS through CasADi, so both sides of a round trip use the same solver."""
+
+    def solver_options(self):
+        options = super().solver_options()
+        options["casadi_solver"] = ca.qpsol
+        options["solver"] = "highs"
+        options["highs"] = {"output_flag": False}
+        return options
+
+
+class HiGHSLinearModel(_HiGHSMixin, LinearModel):
+    pass
+
+
+class _XAtHalfGoal(Goal):
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+
+    function_range = (-5.0, 5.0)
+    order = 1  # keeps the transcribed problem affine
+
+
+class _XAtHalfMaxGoal(_XAtHalfGoal):
+    priority = 1
+    target_max = -2.0  # unreachable, so the priority-1 optimum is non-trivial
+
+
+class _XAtHalfMinGoal(_XAtHalfGoal):
+    priority = 2
+    target_min = 3.0  # conflicts with priority 1
+
+
+class HiGHSGoalProgrammingModel(_HiGHSMixin, GoalProgrammingMixin, _BaseTestModel):
+    def goals(self):
+        return [_XAtHalfMaxGoal(), _XAtHalfMinGoal()]
+
+
+class HiGHSControlTreeModel(ControlTreeMixin, HiGHSLinearModel):
+    """Three members sharing controls before branching at t = 0.5 (time steps 0 to 3)."""
+
+    @property
+    def ensemble_size(self):
+        return 3
+
+    def control_tree_options(self):
+        return {"forecast_variables": ["constant_input"], "branching_times": [0.5], "k": 3}
+
+    def constant_inputs(self, ensemble_member):
+        values = np.linspace(1.0 - 0.1 * ensemble_member, 0.5 + 0.1 * ensemble_member, 9)
+        return {"constant_input": Timeseries(self.times(), values)}
+
+
+def _exported_lp_files(model_class):
+    with _suppress_info_logging(), tempfile.TemporaryDirectory() as output_folder:
+        model_class(output_folder=output_folder).optimize()
+        contents = []
+        for lp_file in sorted(os.listdir(output_folder)):
+            with open(os.path.join(output_folder, lp_file)) as f:
+                contents.append(f.read())
+    return contents
+
+
+def _solve_lp_with_highs(path):
+    h = highspy.Highs()
+    h.setOptionValue("output_flag", False)
+    h.readModel(path)
+    h.run()
+    return h.modelStatusToString(h.getModelStatus()), h.getObjectiveValue()
+
+
+class TestLPRoundTrip(unittest.TestCase):
+    """HiGHS on the last exported LP file must reproduce the optimum RTC-Tools found."""
+
+    def assert_round_trip(self, model_class):
+        with _suppress_info_logging(), tempfile.TemporaryDirectory() as output_folder:
+            problem = model_class(output_folder=output_folder)
+            problem.optimize()
+            last_lp = sorted(f for f in os.listdir(output_folder) if f.endswith(".lp"))[-1]
+            status, objective = _solve_lp_with_highs(os.path.join(output_folder, last_lp))
+        self.assertEqual(status, "Optimal")
+        self.assertAlmostEqual(objective, problem.objective_value, places=5)
+
+    def test_linear_model(self):
+        self.assert_round_trip(HiGHSLinearModel)
+
+    def test_goal_programming_keeps_previous_priority(self):
+        self.assert_round_trip(HiGHSGoalProgrammingModel)
+
+    def test_upper_bounded_variable_is_free_below(self):
+        X = ca.SX.sym("X", 1)
+        constraints = _build_constraints(X[0], X, [-100.0], [np.inf], ["x0"])
+        bounds, _, _ = _build_bounds(["x0"], [-np.inf], [5.0], [False])
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
+            status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(status, "Optimal")
+        self.assertEqual(objective, -100.0)
+
+    def test_control_tree(self):
+        self.assert_round_trip(HiGHSControlTreeModel)
+
+    def test_control_tree_names_shared_slots_without_member_suffix(self):
+        (content,) = _exported_lp_files(HiGHSControlTreeModel)
+        self.assertEqual(set(re.findall(r"\bu__t(\d)\b(?!__m)", content)), {"0", "1", "2", "3"})
+        self.assertEqual(
+            set(re.findall(r"\bu__t(\d)__m(\d)\b", content)),
+            {(str(t), str(m)) for t in range(4, 9) for m in range(3)},
+        )
+
+    def test_infeasible_constant_rows_stay_infeasible(self):
+        X = ca.SX.sym("X", 1)
+        cases = {
+            "lower": (0.5, np.inf),
+            "upper": (-np.inf, -0.5),
+            "equality": (0.5, 0.5),
+            "range": (0.25, 0.75),
+            "crossed": (0.75, 0.25),
+        }
+        for case, (lb, ub) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as output_folder:
+                g = ca.vertcat(X[0], ca.SX(0.0))
+                with self.assertLogs("rtctools", "WARNING"):
+                    constraints = _build_constraints(g, X, [0.0, lb], [1.0, ub], ["x0"])
+                bounds, _, _ = _build_bounds(["x0"], [-10.0], [10.0], [False])
+                _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
+                status, _ = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+                self.assertEqual(status, "Infeasible")

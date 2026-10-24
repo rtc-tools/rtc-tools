@@ -2129,9 +2129,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         Validates that the problem is compatible with LP/MILP export (affine objective
         and constraints), builds the LP file representation, and writes it to the output
         folder. Problems with discrete variables are exported as MILP (with a General
-        section listing integer variables). For ensemble problems, shared variables
-        (controls) are exported without a member suffix; per-member variables (states)
-        receive a ``__m{i}`` suffix (e.g. ``x__t3__m0``).
+        section listing integer variables). For ensemble problems, a decision-vector entry
+        used by every member (e.g. a control before its branching time) is exported without
+        a member suffix; other entries get the ``__m{i}`` suffix of the lowest member using
+        them (e.g. ``x__t3__m0``).
 
         Args:
             f: Symbolic objective expression (already expanded to SX).
@@ -2142,8 +2143,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             discrete: Boolean array indicating discrete variables.
 
         Raises:
-            ValueError: If the problem has a non-affine objective or constraints, or
-                uses non-linear collocation (``linear_collocation=False``).
+            ValueError: If the problem has a non-affine objective or constraints, uses
+                non-linear collocation (``linear_collocation=False``), or has a bound or
+                constant term that an LP file cannot hold (NaN, a lower bound of +inf, an
+                upper bound of -inf, a non-finite constant).
         """
         if getattr(self, "_dae_linear_collocation", self.linear_collocation) is False:
             raise ValueError(
