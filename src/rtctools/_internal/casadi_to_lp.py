@@ -51,6 +51,24 @@ def _format_lp_bound(val: float) -> str:
     return f"{val:.15g}"
 
 
+def _describe(indices, names: list[str] | None) -> str:
+    """List up to ten indices, by name if names are given."""
+    indices = list(indices)[:10]
+    return ", ".join(names[i] for i in indices) if names is not None else str(indices)
+
+
+def _check_writable_bounds(
+    lb: np.ndarray, ub: np.ndarray, kind: str, names: list[str] | None
+) -> None:
+    """Raise if a bound has no LP form: NaN, a lower bound of +inf or an upper bound of -inf."""
+    bad = np.flatnonzero(np.isnan(lb) | np.isnan(ub) | np.isposinf(lb) | np.isneginf(ub))
+    if len(bad):
+        raise ValueError(
+            f"Cannot export LP file: {len(bad)} {kind}(s) have a NaN bound, a lower bound of "
+            f"+inf or an upper bound of -inf: {_describe(bad, names)}."
+        )
+
+
 def _build_objective(f: ca.SX, x: ca.SX, var_names: list[str]) -> str:
     """
     Build the LP objective string from the symbolic objective and variable names.
@@ -135,8 +153,9 @@ def _build_constraints(
         in an LP file.
 
     Raises:
-        ValueError: If a constraint row has no variable terms and its constant value
-            violates its bounds, i.e. the problem is infeasible.
+        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`), a
+            row has a non-finite constant term, or a row has no variable terms and its
+            constant value violates its bounds, i.e. the problem is infeasible.
     """
     A, b = ca.linear_coeff(g, x)
     A = ca.sparsify(ca.DM(A))
@@ -144,9 +163,16 @@ def _build_constraints(
 
     lbg = np.array(ca.veccat(*lbg))[:, 0]
     ubg = np.array(ca.veccat(*ubg))[:, 0]
+    _check_writable_bounds(lbg, ubg, "constraint", None)
     A_csc = A.tocsc()
     A_coo = A_csc.tocoo()
     b = np.array(b)[:, 0]
+    nonfinite_rows = np.flatnonzero(~np.isfinite(b))
+    if len(nonfinite_rows):
+        raise ValueError(
+            "Cannot export LP file: constraint rows have a non-finite constant term: "
+            f"{_describe(nonfinite_rows, None)}."
+        )
 
     constraints = [[] for _ in range(A.shape[0])]
     for i, j, c in zip(A_coo.row, A_coo.col, A_coo.data, strict=True):
@@ -237,7 +263,13 @@ def _build_bounds(
         is the indented bounds section (empty string when nothing to emit),
         ``binary_vars`` is the list of binary (0/1) variable names, and
         ``general_vars`` is the list of general integer variable names.
+
+    Raises:
+        ValueError: If a bound cannot be written (see :func:`_check_writable_bounds`).
     """
+    _check_writable_bounds(
+        np.asarray(lbx, dtype=float), np.asarray(ubx, dtype=float), "variable", var_names
+    )
     bounds_list = []
     binary_vars = []
     general_vars = []
