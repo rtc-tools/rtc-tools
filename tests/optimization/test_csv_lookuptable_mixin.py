@@ -1,4 +1,7 @@
 import logging
+import subprocess
+import sys
+import unittest
 
 import numpy as np
 
@@ -92,3 +95,13 @@ class TestCSVLookupMixin(TestCase):
         np.testing.assert_allclose(x_prime_results, x_prime_desired_results, equal_nan=True)
         # x_prime min is 4.0, so x should be 0.2 when minimized
         np.testing.assert_allclose(x_results, 0.2, equal_nan=True)
+
+
+@unittest.skipIf(sys.version_info < (3, 15), "__lazy_modules__ needs Python 3.15")
+class TestLazyScipy(TestCase):
+    def test_import_does_not_load_scipy(self):
+        code = (
+            "import sys, rtctools.optimization.csv_lookup_table_mixin; "
+            "assert 'scipy' not in sys.modules"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True)
