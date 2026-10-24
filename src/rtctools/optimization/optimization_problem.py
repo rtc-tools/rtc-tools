@@ -142,7 +142,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             nlp["x"] = x_sx
 
             if export_lp:
-                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete)
+                self._export_lp_file(f_sx, g_sx, x_sx, lbg, ubg, lbx, ubx, discrete, g_names)
 
         # Debug check for non-linearity in constraints
         self.__debug_check_linearity_constraints(nlp)
@@ -267,6 +267,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         lbx: list,
         ubx: list,
         discrete: list[bool],
+        g_names: list[str] | None = None,
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
