@@ -280,6 +280,11 @@ class TestSinglePassGoalProgramming(TestCase):
 
         self.assertEqual(seed["eps_0_0"].shape, (3,))
 
+    def test_initial_seed_vector_path_epsilon_shape(self):
+        n_times = len(self.problem_append.times())
+        for problem in (self.problem_gp, self.problem_append):
+            self.assertEqual(problem._initial_seed["path_eps_0_1"].values.shape, (n_times, 2))
+
 
 class ModelSinglePassGoalProgrammingCachingQPSol(ModelSinglePassGoalProgrammingAppend):
     def pre(self):
