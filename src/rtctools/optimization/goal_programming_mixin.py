@@ -152,7 +152,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         for epsilon in self.__subproblem_path_epsilons:
             eps_size = epsilon.size1()
             if eps_size > 1:
-                seed[epsilon.name()] = Timeseries(times, np.ones((eps_size, len(times))))
+                seed[epsilon.name()] = Timeseries(times, np.ones((len(times), eps_size)))
             else:
                 seed[epsilon.name()] = Timeseries(times, np.ones(len(times)))
 
