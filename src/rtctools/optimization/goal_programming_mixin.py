@@ -249,6 +249,8 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         +---------------------------+-----------+---------------+
         | ``keep_soft_constraints`` | ``bool``  | ``False``     |
         +---------------------------+-----------+---------------+
+        | ``constraint_names``      | ``bool``  | ``False``     |
+        +---------------------------+-----------+---------------+
 
         Before turning a soft constraint of the goal programming algorithm into a hard constraint,
         the violation variable (also known as epsilon) of each goal is relaxed with the
@@ -314,6 +316,9 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         constraint for the subsequent priorities (while in the False option this was the case only
         for the function of minimization goals).
 
+        If ``constraint_names`` is set to ``True``, the constraints that goal programming adds
+        are named ``{GoalClass}_p{priority}``. This requires ``named_constraints = True``.
+
         :returns: A dictionary of goal programming options.
         """
 
@@ -329,6 +334,7 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         options["interior_distance"] = 1e-6
         options["scale_by_problem_size"] = False
         options["keep_soft_constraints"] = False
+        options["constraint_names"] = False
 
         # Define temporary variable to avoid infinite loop between
         # solver_options and goal_programming_options.
@@ -609,13 +615,14 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
 
         options = self.goal_programming_options()
 
+        name = f"pareto_p{self._gp_current_priority}"
         if options["fix_minimized_values"]:
-            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True)
+            constraint = _GoalConstraint(None, _constraint_func, obj_val, obj_val, True, name)
             self.check_collocation_linearity = False
             self.linear_collocation = False
         else:
             obj_val += options["constraint_relaxation"]
-            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True)
+            constraint = _GoalConstraint(None, _constraint_func, -np.inf, obj_val, True, name)
 
         # The goal works over all ensemble members, so we add it to the last
         # one, as at that point the inputs of all previous ensemble members

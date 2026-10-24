@@ -12,6 +12,7 @@ from .goal_programming_mixin_base import (
     StateGoal,
     _EmptyEnsembleList,
     _EmptyEnsembleOrderedDict,
+    _goal_name,
     _GoalConstraint,
     _GoalProgrammingMixinBase,
 )
@@ -195,8 +196,11 @@ class MinAbsGoalProgrammingMixin(_GoalProgrammingMixinBase):
                 _pos = functools.partial(_constraint_func, sign=1)
                 _neg = functools.partial(_constraint_func, sign=-1)
 
-                constraints[ensemble_member].append(_GoalConstraint(None, _pos, 0.0, np.inf, False))
-                constraints[ensemble_member].append(_GoalConstraint(None, _neg, 0.0, np.inf, False))
+                name = _goal_name(goal)
+                constraints[ensemble_member] += [
+                    _GoalConstraint(None, _pos, 0.0, np.inf, False, f"{name}_abs_pos"),
+                    _GoalConstraint(None, _neg, 0.0, np.inf, False, f"{name}_abs_neg"),
+                ]
 
             # Overwrite the original goal, such that it is just a minimization
             # of the additional variable.
