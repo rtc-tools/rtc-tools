@@ -1,3 +1,5 @@
+__lazy_modules__ = ["scipy.interpolate", "scipy.optimize"]
+
 import configparser
 import glob
 import logging
