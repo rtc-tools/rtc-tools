@@ -27,3 +27,25 @@ In this case, we optimize for all times
 unless the class attribute ``only_check_initial_values`` is set to ``True``.
 Optimizing for only the initial time can be useful
 to check for infeasibilities due to incompatible initial conditions.
+
+Exporting the problem as an LP file
+-----------------------------------
+
+A linear or mixed-integer linear problem can be written to an LP file, to inspect it or to
+solve it with another solver (e.g. HiGHS or CPLEX)::
+
+    def export_options(self):
+        options = super().export_options()
+        options["export_lp"] = True
+        return options
+
+The file is written to the output folder, e.g. ``SingleReservoir_20250101_120000.lp``. When goal
+programming solves more than one priority, each priority gets its own file with a
+``_priority_N`` suffix. Export requires an affine objective, affine constraints, and bounds and
+constant terms an LP file can hold (no NaN, no lower bound of +inf, no upper bound of -inf, no
+infinite constant). It raises a :exc:`ValueError` otherwise.
+
+Rows with two infinite bounds are left out of the file. A row that reduces to a constant
+outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
+written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported
+problem infeasible.
