@@ -65,13 +65,13 @@ def _sanitize_lp_name(name: str) -> str:
 
 
 def _deduplicate(names: list[str]) -> list[str]:
-    """Append ``__d{n}`` to every occurrence of a repeated name, keeping all names unique."""
+    """Append ``__d{n}`` to every occurrence of a repeated name; empty names stay empty."""
     counts = Counter(names)
     taken = set(names)
     next_index = Counter()
     result = []
     for name in names:
-        if counts[name] > 1:
+        if name and counts[name] > 1:
             while (candidate := f"{name}__d{next_index[name]}") in taken:
                 next_index[name] += 1
             taken.add(candidate)
@@ -80,14 +80,16 @@ def _deduplicate(names: list[str]) -> list[str]:
     return result
 
 
-def _describe(indices, names: list[str] | None) -> str:
-    """List up to ten indices, by name if names are given."""
+def _describe(indices, names: list[str | None] | None) -> str:
+    """List up to ten indices, by name where names are given."""
     indices = list(indices)[:10]
-    return ", ".join(names[i] for i in indices) if names is not None else str(indices)
+    if names is None:
+        return str(indices)
+    return ", ".join(names[i] or f"row {i}" for i in indices)
 
 
 def _check_writable_bounds(
-    lb: np.ndarray, ub: np.ndarray, kind: str, names: list[str] | None
+    lb: np.ndarray, ub: np.ndarray, kind: str, names: list[str | None] | None
 ) -> None:
     """Raise if a bound has no LP form: NaN, a lower bound of +inf or an upper bound of -inf."""
     bad = np.flatnonzero(np.isnan(lb) | np.isnan(ub) | np.isposinf(lb) | np.isneginf(ub))
@@ -159,7 +161,7 @@ def _build_constraints(
     lbg: list,
     ubg: list,
     var_names: list[str],
-    row_names: list[str] | None = None,
+    row_names: list[str | None] | None = None,
 ) -> str:
     """
     Build the LP constraints string.
@@ -183,7 +185,7 @@ def _build_constraints(
         lbg: Lower bounds on each constraint row (``-inf`` for one-sided upper bounds).
         ubg: Upper bounds on each constraint row (``+inf`` for one-sided lower bounds).
         var_names: Human-readable name for each element of x.
-        row_names: Optional name for each row of g.
+        row_names: Optional name for each row of g; a row named ``None`` stays unnamed.
 
     Returns:
         Indented constraints string ready to follow the ``Subject To`` header
@@ -215,8 +217,8 @@ def _build_constraints(
         if abs(c) > LP_COEFF_EPSILON:
             constraints[i].extend(["+" if c > 0 else "-", f"{abs(c):.15g}", var_names[j]])
 
-    labels = None if row_names is None else [_sanitize_lp_name(n) for n in row_names]
-    lines = []  # (label, line); the label is "" without row names
+    labels = [_sanitize_lp_name(n) if n else "" for n in row_names or [None] * A.shape[0]]
+    lines = []  # (label, line); the label is "" for an unnamed row
     vacuous_rows = []
     infeasible_constant_rows = []
     for i, cur_constr in enumerate(constraints):
@@ -238,7 +240,7 @@ def _build_constraints(
             infeasible_constant_rows.append(i)
             c_str = LP_ZERO_VAR
 
-        label = labels[i] if labels is not None else ""
+        label = labels[i]
         if np.isfinite(lb) and np.isfinite(ub) and lb == ub:
             lines.append((label, f"{c_str} = {lb - b_i:.15g}"))
         elif np.isfinite(lb) and np.isfinite(ub):
@@ -251,7 +253,7 @@ def _build_constraints(
         else:
             lines.append((label, f"{c_str} <= {ub - b_i:.15g}"))
     if infeasible_constant_rows:
-        lines.append((LP_ZERO_VAR if labels is not None else "", f"{LP_ZERO_VAR} = 0"))
+        lines.append((LP_ZERO_VAR if row_names is not None else "", f"{LP_ZERO_VAR} = 0"))
         logger.warning(
             "LP export: %d constraint row(s) reduce to a constant that violates their bounds, "
             "so the problem is infeasible: %s.",
@@ -266,9 +268,8 @@ def _build_constraints(
         )
     if not lines:
         return ""
-    if labels is not None:
-        unique = _deduplicate([label for label, _ in lines])
-        lines = [(label, line) for label, (_, line) in zip(unique, lines, strict=True)]
+    unique = _deduplicate([label for label, _ in lines])
+    lines = [(label, line) for label, (_, line) in zip(unique, lines, strict=True)]
     return "  " + "\n  ".join(f"{label}: {line}" if label else line for label, line in lines)
 
 

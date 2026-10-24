@@ -351,6 +351,9 @@ class TestLPBuilders(unittest.TestCase):
                     _build_bounds(names, [lb], [ub], [False])
         with self.assertRaisesRegex(ValueError, "non-finite constant"):
             _build_constraints(X[0] + np.inf, X, [0.0], [1.0], names)
+        with self.assertRaisesRegex(ValueError, ": a, row 1"):
+            g = ca.vertcat(X[0], X[0])
+            _build_constraints(g, X, [np.nan] * 2, [1.0] * 2, names, ["a", None])
 
     def test_build_constraints_constant_row_feasible_is_skipped(self):
         """A constant constraint (no variable terms) within bounds must be omitted.
@@ -773,6 +776,17 @@ class HiGHSLabelledLinearModel(HiGHSLinearModel):
     label_all_constraint_rows = True
 
 
+class HiGHSNamedLinearModel(HiGHSLinearModel):
+    named_constraints = True
+
+    def constraints(self, ensemble_member):
+        x_at_half = self.state_at("x", 0.5, ensemble_member=ensemble_member)
+        return [(x_at_half, -5.0, 5.0, "x_mid"), (x_at_half, -6.0, 6.0)]
+
+    def path_constraints(self, ensemble_member):
+        return [(self.state("u"), -2.0, 2.0, "u range")]
+
+
 class _XAtHalfGoal(Goal):
     def function(self, optimization_problem, ensemble_member):
         return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
@@ -889,6 +903,14 @@ class TestLPRoundTrip(unittest.TestCase):
 
     def test_labelled_linear_model(self):
         self.assert_round_trip(HiGHSLabelledLinearModel)
+
+    def test_only_named_constraints_name_rows(self):
+        (content,) = _exported_lp_files(HiGHSNamedLinearModel)
+        u_rows = {f"u_range__t{t}__{bound}" for t in range(9) for bound in ("lb", "ub")}
+        self.assertEqual(
+            set(re.findall(r"(?m)^  (\S+): ", content)), {"x_mid__lb", "x_mid__ub", *u_rows}
+        )
+        self.assert_round_trip(HiGHSNamedLinearModel)
 
     def test_row_labels_are_read_back(self):
         X = ca.SX.sym("X", 1)

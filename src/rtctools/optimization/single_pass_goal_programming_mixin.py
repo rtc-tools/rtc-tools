@@ -544,8 +544,11 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
 
             nlp["g"] = g
             if "g_names" in nlp:
-                priorities = self.__priorities[: len(g_extra)]
-                g_names_extra = [f"objective_priority_{p}" for p in priorities]
+                if self.label_all_constraint_rows:
+                    priorities = self.__priorities[: len(g_extra)]
+                    g_names_extra = [f"objective_priority_{p}" for p in priorities]
+                else:
+                    g_names_extra = [None] * len(g_extra)
                 nlp["g_names"] = [*nlp["g_names"], *g_names_extra]
 
         nlp["f"] = self.__objectives[self.__current_priority]

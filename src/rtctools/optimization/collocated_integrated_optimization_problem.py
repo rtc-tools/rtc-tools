@@ -32,15 +32,20 @@ from .timeseries import Timeseries
 logger = logging.getLogger("rtctools")
 
 
-def _row_labels(constraints, prefix):
-    """Label each row of ``(f, m, M)`` tuples, one per element of a vector ``f``."""
+def _row_labels(constraints, prefix, suffix):
+    """Label each row of ``(f, m, M[, name])`` tuples, one per element of a vector ``f``.
+
+    An unnamed entry is labelled ``{prefix}_{i}``, or ``None`` if ``prefix`` is ``None``.
+    """
     for i, c in enumerate(constraints):
-        base = f"{prefix}_{i}"
+        base = (c[3] if len(c) == 4 else None) or (prefix and f"{prefix}_{i}")
         n = c[0].size1()
-        if n == 1:
-            yield base
+        if base is None:
+            yield from [None] * n
+        elif n == 1:
+            yield f"{base}{suffix}"
         else:
-            yield from (f"{base}__{k}" for k in range(n))
+            yield from (f"{base}__{k}{suffix}" for k in range(n))
 
 
 class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABCMeta):
@@ -69,8 +74,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         being added as separate equality constraints. Default is ``False``.
     :cvar label_all_constraint_rows:
         If ``True``, :meth:`transcribe` labels every constraint row in ``nlp["g_names"]``,
-        e.g. ``collocation_eq0__t3``. Default is ``False``, as the labels cost time and memory
-        for every row of large models.
+        e.g. ``collocation_eq0__t3``. Default is ``False``: only rows of constraints named under
+        :attr:`named_constraints` are labelled.
     """
 
     #: Check whether the collocation constraints are linear
@@ -576,9 +581,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Path constraints
         path_constraints = self.path_constraints(0)
-        path_constraint_expressions = ca.vertcat(
-            *[f_constraint for (f_constraint, lb, ub) in path_constraints]
-        )
+        self.__check_constraint_tuples(path_constraints, "path_constraints")
+        path_constraint_expressions = ca.vertcat(*[c[0] for c in path_constraints])
 
         # Delayed feedback
         delayed_feedback_expressions, delayed_feedback_states, delayed_feedback_durations = (
@@ -1237,7 +1241,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         g = []
         lbg = []
         ubg = []
-        labels = [] if self.label_all_constraint_rows else None
+        label_all = self.label_all_constraint_rows
+        labels = [] if label_all or self.named_constraints else None
 
         def add_labels(names):
             if labels is not None:
@@ -1292,6 +1297,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         ubg.extend(zeros)
         add_labels(
             f"initial_residual_{eq}" + (f"__m{m}" if self.ensemble_size > 1 else "")
+            if label_all
+            else None
             for m in range(self.ensemble_size)
             for eq in range(n_initial_residuals)
         )
@@ -1421,7 +1428,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 lbg.append(np.zeros(len(initial_derivative_constraints)))
                 ubg.append(np.zeros(len(initial_derivative_constraints)))
                 add_labels(
-                    f"initial_derivative_{i}{member}"
+                    f"initial_derivative_{i}{member}" if label_all else None
                     for i in range(len(initial_derivative_constraints))
                 )
 
@@ -1645,7 +1652,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 lbg.extend(zeros)
                 ubg.extend(zeros)
                 add_labels(
-                    f"collocation_eq{eq}__t{t}{member}"
+                    f"collocation_eq{eq}__t{t}{member}" if label_all else None
                     for t in range(1, n_collocation_times)
                     for eq in range(dae_residual_collocated_size)
                 )
@@ -1953,7 +1960,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         lbg.extend(zeros)
                         ubg.extend(zeros)
                         add_labels(
-                            f"delay_{in_canonical}__t{t}{member}"
+                            f"delay_{in_canonical}__t{t}{member}" if label_all else None
                             for t in range(n_collocation_times)
                         )
 
@@ -1978,12 +1985,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     "The `constraints` method returned None, but should always return a list."
                 )
 
+            self.__check_constraint_tuples(constraints, "constraints")
+
             if logger.getEffectiveLevel() == logging.DEBUG:
                 for constraint in constraints:
-                    logger.debug("Adding constraint {}, {}, {}".format(*constraint))
+                    logger.debug("Adding constraint " + ", ".join(map(str, constraint)))
 
             if constraints:
-                g_constraint, lbg_constraint, ubg_constraint = list(zip(*constraints, strict=True))
+                g_constraint, lbg_constraint, ubg_constraint = zip(
+                    *(c[:3] for c in constraints), strict=True
+                )
 
                 lbg_constraint = list(lbg_constraint)
                 ubg_constraint = list(ubg_constraint)
@@ -2020,13 +2031,15 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 g.extend(g_constraint)
                 lbg.extend(lbg_constraint)
                 ubg.extend(ubg_constraint)
-                add_labels(f"{label}{member}" for label in _row_labels(constraints, "constraint"))
+                prefix = "constraint" if label_all else None
+                add_labels(_row_labels(constraints, prefix, member))
 
             # Path constraints
             # We need to call self.path_constraints() again here,
             # as the bounds may change from ensemble member to member.
             if ensemble_member > 0:
                 path_constraints = self.path_constraints(ensemble_member)
+                self.__check_constraint_tuples(path_constraints, "path_constraints")
 
             if len(path_constraints) > 0:
                 # We need to evaluate the path constraints at t0, as the initial time is not
@@ -2047,7 +2060,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 j = 0
                 for path_constraint in path_constraints:
                     if logger.getEffectiveLevel() == logging.DEBUG:
-                        logger.debug("Adding path constraint {}, {}, {}".format(*path_constraint))
+                        logger.debug(
+                            "Adding path constraint " + ", ".join(map(str, path_constraint))
+                        )
 
                     s = path_constraint[0].size1()
 
@@ -2082,10 +2097,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                 lbg.extend(lbg_path_constraints.transpose().ravel())
                 ubg.extend(ubg_path_constraints.transpose().ravel())
+                prefix = "path_constraint" if label_all else None
                 add_labels(
-                    f"{label}__t{t}{member}"
+                    label
                     for t in range(n_collocation_times)
-                    for label in _row_labels(path_constraints, "path_constraint")
+                    for label in _row_labels(path_constraints, prefix, f"__t{t}{member}")
                 )
 
         # If inlining delay expressions, carry out the single call to ca.substitute()
@@ -2127,6 +2143,20 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__debug_check_transcribe_linear_coefficients(discrete, lbx, ubx, lbg, ubg, x0, nlp)
 
         return discrete, lbx, ubx, lbg, ubg, x0, nlp
+
+    def __check_constraint_tuples(self, constraints, method):
+        for i, c in enumerate(constraints):
+            if len(c) == 4 and self.named_constraints:
+                if not isinstance(c[3], str | None):
+                    raise TypeError(
+                        f"{method}() entry #{i}: the name must be a str or None, "
+                        f"not {type(c[3]).__name__}"
+                    )
+            elif len(c) != 3:
+                raise TypeError(
+                    f"{method}() entry #{i} has {len(c)} elements; expected (f, m, M), "
+                    "or (f, m, M, name) if named_constraints is True"
+                )
 
     def clear_transcription_cache(self):
         """
@@ -2173,7 +2203,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         lbx: list,
         ubx: list,
         discrete: list[bool],
-        g_names: list[str] | None = None,
+        g_names: list[str | None] | None = None,
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
@@ -2193,8 +2223,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             lbg, ubg: Lower/upper bounds on constraints.
             lbx, ubx: Lower/upper bounds on variables.
             discrete: Boolean array indicating discrete variables.
-            g_names: Optional label per row of g, written as LP row names; see
-                :attr:`label_all_constraint_rows`.
+            g_names: Optional label per row of g, written as LP row names; a row labelled
+                ``None`` stays unnamed.
 
         Raises:
             ValueError: If the problem has a non-affine objective or constraints, uses

@@ -51,6 +51,9 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     #: Enable ensemble-specific bounds functionality
     ensemble_specific_bounds = False
 
+    #: Allow constraint tuples with a name as 4th element, to label their rows
+    named_constraints = False
+
     def __init__(self, **kwargs):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
@@ -267,7 +270,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         lbx: list,
         ubx: list,
         discrete: list[bool],
-        g_names: list[str] | None = None,
+        g_names: list[str | None] | None = None,
     ) -> None:
         """Export the transcribed LP/MILP problem as a file.
 
@@ -851,7 +854,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str | None]
+    ]:
         """
         Returns a list of constraints for the given ensemble member.
 
@@ -863,6 +869,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         :returns: A list of triples ``(f, m, M)``, with an :class:`MX` object representing
                   the constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds must be numbers.
+
+        With :attr:`named_constraints` enabled, a tuple may carry a name as 4th element,
+        ``(f, m, M, name)``, which labels the constraint's rows, e.g. in an exported LP file.
+        Lists may then mix both lengths, so code reading them must accept either.
 
         Example::
 
@@ -881,7 +891,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
 
     def path_constraints(
         self, ensemble_member: int
-    ) -> list[tuple[ca.MX, float | np.ndarray, float | np.ndarray]]:
+    ) -> list[
+        tuple[ca.MX, float | np.ndarray, float | np.ndarray]
+        | tuple[ca.MX, float | np.ndarray, float | np.ndarray, str | None]
+    ]:
         """
         Returns a list of path constraints.
 
@@ -895,6 +908,10 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         :returns: A list of triples ``(f, m, M)``, with an :class:`MX` object representing
                   the path constraint function ``f``, lower bound ``m``, and upper bound ``M``.
                   The bounds may be numbers or :class:`.Timeseries` objects.
+
+        With :attr:`named_constraints` enabled, a tuple may carry a name as 4th element,
+        ``(f, m, M, name)``, which labels the constraint's rows, e.g. in an exported LP file.
+        Lists may then mix both lengths, so code reading them must accept either.
 
         Example::
 
