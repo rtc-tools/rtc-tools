@@ -2129,9 +2129,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         Validates that the problem is compatible with LP/MILP export (affine objective
         and constraints), builds the LP file representation, and writes it to the output
         folder. Problems with discrete variables are exported as MILP (with a General
-        section listing integer variables). For ensemble problems, shared variables
-        (controls) are exported without a member suffix; per-member variables (states)
-        receive a ``__m{i}`` suffix (e.g. ``x__t3__m0``).
+        section listing integer variables). For ensemble problems, a decision-vector entry
+        used by every member (e.g. a control before its branching time) is exported without
+        a member suffix; other entries get the ``__m{i}`` suffix of the lowest member using
+        them (e.g. ``x__t3__m0``).
 
         Args:
             f: Symbolic objective expression (already expanded to SX).
