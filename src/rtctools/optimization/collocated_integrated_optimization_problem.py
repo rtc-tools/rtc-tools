@@ -32,6 +32,17 @@ from .timeseries import Timeseries
 logger = logging.getLogger("rtctools")
 
 
+def _row_labels(constraints, prefix):
+    """Label each row of ``(f, m, M)`` tuples, one per element of a vector ``f``."""
+    for i, c in enumerate(constraints):
+        base = f"{prefix}_{i}"
+        n = c[0].size1()
+        if n == 1:
+            yield base
+        else:
+            yield from (f"{base}__{k}" for k in range(n))
+
+
 class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABCMeta):
     """
     Discretizes your model using a mixed collocation/integration scheme.
@@ -56,6 +67,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
     :cvar inline_delay_expressions:
         If ``True``, delay expressions are inlined into constraints and objectives instead of
         being added as separate equality constraints. Default is ``False``.
+    :cvar track_constraint_names:
+        If ``True``, :meth:`transcribe` labels every constraint row in ``nlp["g_names"]``,
+        e.g. ``collocation_eq0__t3``. Default is ``False``, as the labels cost time and memory
+        for every row of large models.
     """
 
     #: Check whether the collocation constraints are linear
@@ -63,6 +78,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
     #: Inline delay expressions instead of adding them as separate equality constraints
     inline_delay_expressions = False
+
+    #: Label every constraint row in ``nlp["g_names"]``
+    track_constraint_names = False
 
     #: Whether or not the collocation constraints are linear (affine)
     linear_collocation = None
@@ -1219,6 +1237,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         g = []
         lbg = []
         ubg = []
+        labels = [] if self.track_constraint_names else None
+
+        def add_labels(names):
+            if labels is not None:
+                labels.extend(names)
 
         # Add constraints for initial conditions
         if self.__initial_residual_with_params_fun_map is None:
@@ -1261,11 +1284,17 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             True,
         )
 
+        n_initial_residuals = res.size1()
         res = ca.vec(res)
         g.append(res)
         zeros = [0.0] * res.size1()
         lbg.extend(zeros)
         ubg.extend(zeros)
+        add_labels(
+            f"initial_residual_{eq}" + (f"__m{m}" if self.ensemble_size > 1 else "")
+            for m in range(self.ensemble_size)
+            for eq in range(n_initial_residuals)
+        )
 
         # The initial values and the interpolated mapped arguments are saved
         # such that can be reused in map_path_expression().
@@ -1290,6 +1319,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # of loop detection.
         for ensemble_member in range(self.ensemble_size):
             logger.info(f"Transcribing ensemble member {ensemble_member + 1}/{self.ensemble_size}")
+            member = f"__m{ensemble_member}" if self.ensemble_size > 1 else ""
 
             initial_state = ensemble_aggregate["initial_state"][:, ensemble_member]
             initial_derivatives = ensemble_aggregate["initial_derivatives"][:, ensemble_member]
@@ -1390,6 +1420,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 g.append(ca.vertcat(*initial_derivative_constraints))
                 lbg.append(np.zeros(len(initial_derivative_constraints)))
                 ubg.append(np.zeros(len(initial_derivative_constraints)))
+                add_labels(
+                    f"initial_derivative_{i}{member}"
+                    for i in range(len(initial_derivative_constraints))
+                )
 
             # Initial conditions for integrator
             accumulation_X0 = []
@@ -1610,6 +1644,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 zeros = np.zeros(collocation_constraints.size1())
                 lbg.extend(zeros)
                 ubg.extend(zeros)
+                add_labels(
+                    f"collocation_eq{eq}__t{t}{member}"
+                    for t in range(1, n_collocation_times)
+                    for eq in range(dae_residual_collocated_size)
+                )
 
             # Prepare arguments for map_path_expression() calls to ca.map()
             if len(integrated_variables) + len(collocated_variables) > 0:
@@ -1913,6 +1952,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         zeros = np.zeros(n_collocation_times)
                         lbg.extend(zeros)
                         ubg.extend(zeros)
+                        add_labels(
+                            f"delay_{in_canonical}__t{t}{member}"
+                            for t in range(n_collocation_times)
+                        )
 
             # Objective
             f_member = self.objective(ensemble_member)
@@ -1977,6 +2020,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 g.extend(g_constraint)
                 lbg.extend(lbg_constraint)
                 ubg.extend(ubg_constraint)
+                add_labels(f"{label}{member}" for label in _row_labels(constraints, "constraint"))
 
             # Path constraints
             # We need to call self.path_constraints() again here,
@@ -2038,6 +2082,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                 lbg.extend(lbg_path_constraints.transpose().ravel())
                 ubg.extend(ubg_path_constraints.transpose().ravel())
+                add_labels(
+                    f"{label}__t{t}{member}"
+                    for t in range(n_collocation_times)
+                    for label in _row_labels(path_constraints, "path_constraint")
+                )
 
         # If inlining delay expressions, carry out the single call to ca.substitute()
         # A single call is more efficient as it constructs a single ca.Function internally,
@@ -2068,6 +2117,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         logger.info("Creating NLP dictionary")
 
         nlp = {"x": X, "f": ca.sum1(ca.vertcat(*f)), "g": ca.vertcat(*g)}
+        if labels is not None:
+            nlp["g_names"] = labels
 
         # Done
         logger.info("Done transcribing problem")

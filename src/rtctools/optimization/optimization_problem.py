@@ -93,6 +93,18 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Transcribe problem
         discrete, lbx, ubx, lbg, ubg, x0, nlp = self.transcribe()
 
+        # Row labels are not part of the CasADi NLP; see track_constraint_names
+        g_names = nlp.pop("g_names", None)
+        if g_names is not None and len(g_names) != nlp["g"].size1():
+            logger.warning(
+                "transcribe() returned %d constraint labels for %d constraint rows; ignoring "
+                "them. A transcribe() override that adds rows to nlp['g'] must also extend "
+                "nlp['g_names'].",
+                len(g_names),
+                nlp["g"].size1(),
+            )
+            g_names = None
+
         # Create an NLP solver
         logger.debug("Collecting solver options")
 
@@ -188,6 +200,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             "ubg": ubg,
             "x0": x0,
             "nlp": nlp,
+            "g_names": g_names,
         }
         self.__lam_g = results.get("lam_g")
         self.__lam_x = results.get("lam_x")

@@ -324,6 +324,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         priorities = sorted(
             {int(goal.priority) for goal in itertools.chain(goals, path_goals) if not goal.is_empty}
         )
+        self.__priorities = priorities
 
         for priority in priorities:
             subproblems.append(
@@ -542,6 +543,10 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             ubg = [*ubg.copy(), *ubg_extra]
 
             nlp["g"] = g
+            if "g_names" in nlp:
+                nlp["g_names"] = nlp["g_names"] + [
+                    f"objective_priority_{p}" for p in self.__priorities[: len(g_extra)]
+                ]
 
         nlp["f"] = self.__objectives[self.__current_priority]
 
