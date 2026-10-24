@@ -62,6 +62,18 @@ finite lower and upper bound becomes two lines, labelled ``__lb`` and ``__ub``. 
 that LP readers reject become ``_``, and repeated labels get ``__d{n}``. The labels are also
 available without exporting, in ``transcribed_problem["g_names"]`` after :meth:`optimize`.
 
+To name a constraint yourself, set ``named_constraints = True`` and add the name as 4th
+element of the tuple. With this flag on, constraint lists may mix 3- and 4-tuples, so code
+that reads them, like a mixin calling ``super().constraints()``, must accept both::
+
+    named_constraints = True
+    track_constraint_names = True
+
+    def path_constraints(self, ensemble_member):
+        return [(self.state("Q_release"), 0.0, 10.0, "release_capacity")]
+
+This yields rows labelled ``release_capacity__t0__lb``, ``release_capacity__t0__ub``, and so on.
+
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported

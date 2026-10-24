@@ -15,7 +15,45 @@ class UnnamedModel(Model):
         return [(self.state("u"), -2.0, 2.0), (self.state("x"), -10.0, 10.0)]
 
 
-class LabelledModel(UnnamedModel):
+class NamedModel(UnnamedModel):
+    named_constraints = True
+
+    def constraints(self, ensemble_member):
+        first, *rest = super().constraints(ensemble_member)
+        return [(*first, "x_at_half"), *rest]
+
+    def path_constraints(self, ensemble_member):
+        first, *rest = super().path_constraints(ensemble_member)
+        return [(*first, "u_range"), *rest]
+
+
+class NameWithoutFlagModel(NamedModel):
+    named_constraints = False
+
+
+class NonStringNameModel(NamedModel):
+    def constraints(self, ensemble_member):
+        return [(*c[:3], 1) for c in super().constraints(ensemble_member)]
+
+
+class TestConstraintTuples(TestCase):
+    def test_names_do_not_change_the_problem(self):
+        unnamed = UnnamedModel()
+        self.assertTrue(unnamed.optimize())
+        named = NamedModel()
+        self.assertTrue(named.optimize())
+        self.assertEqual(named.objective_value, unnamed.objective_value)
+
+    def test_name_requires_flag(self):
+        with self.assertRaisesRegex(TypeError, "named_constraints is True"):
+            NameWithoutFlagModel().optimize()
+
+    def test_name_must_be_a_string(self):
+        with self.assertRaisesRegex(TypeError, "must be a str or None, not int"):
+            NonStringNameModel().optimize()
+
+
+class LabelledModel(NamedModel):
     track_constraint_names = True
 
     def constraints(self, ensemble_member):
@@ -66,19 +104,19 @@ class TestConstraintLabels(TestCase):
     def test_labels_name_every_row(self):
         labels, lbg = self.labels_and_bounds(LabelledModel)
         self.assertEqual(len(set(labels)), len(labels))
-        self.assertEqual(lbg["constraint_0"], 1.0)
+        self.assertEqual(lbg["x_at_half"], 1.0)
         self.assertEqual(lbg["constraint_2"], -np.inf)
         self.assertEqual(lbg["constraint_3__0"], -5.0)
-        self.assertEqual(lbg["path_constraint_0__t0"], -2.0)
+        self.assertEqual(lbg["u_range__t0"], -2.0)
         self.assertEqual(lbg["path_constraint_1__t20"], -10.0)
         self.assertIn("initial_residual_0", labels)
 
     def test_ensemble_members_get_a_suffix(self):
         labels, _ = self.labels_and_bounds(LabelledEnsembleModel)
         self.assertEqual(len(set(labels)), len(labels))
-        self.assertIn("constraint_0__m1", labels)
+        self.assertIn("x_at_half__m1", labels)
         self.assertIn("initial_residual_0__m1", labels)
-        self.assertIn("path_constraint_0__t3__m0", labels)
+        self.assertIn("u_range__t3__m0", labels)
 
     def test_tracking_is_off_by_default(self):
         problem = UnnamedModel()

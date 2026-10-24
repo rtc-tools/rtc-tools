@@ -33,9 +33,9 @@ logger = logging.getLogger("rtctools")
 
 
 def _row_labels(constraints, prefix):
-    """Label each row of ``(f, m, M)`` tuples, one per element of a vector ``f``."""
+    """Label each row of ``(f, m, M[, name])`` tuples, one per element of a vector ``f``."""
     for i, c in enumerate(constraints):
-        base = f"{prefix}_{i}"
+        base = (c[3] if len(c) == 4 else None) or f"{prefix}_{i}"
         n = c[0].size1()
         if n == 1:
             yield base
@@ -69,8 +69,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         being added as separate equality constraints. Default is ``False``.
     :cvar track_constraint_names:
         If ``True``, :meth:`transcribe` labels every constraint row in ``nlp["g_names"]``,
-        e.g. ``collocation_eq0__t3``. Default is ``False``, as the labels cost time and memory
-        for every row of large models.
+        e.g. ``collocation_eq0__t3`` or a name given in :meth:`constraints`. Default is
+        ``False``, as the labels cost time and memory for every row of large models.
     """
 
     #: Check whether the collocation constraints are linear
@@ -576,9 +576,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Path constraints
         path_constraints = self.path_constraints(0)
-        path_constraint_expressions = ca.vertcat(
-            *[f_constraint for (f_constraint, lb, ub) in path_constraints]
-        )
+        self.__check_constraint_tuples(path_constraints, "path_constraints")
+        path_constraint_expressions = ca.vertcat(*[c[0] for c in path_constraints])
 
         # Delayed feedback
         delayed_feedback_expressions, delayed_feedback_states, delayed_feedback_durations = (
@@ -1978,12 +1977,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     "The `constraints` method returned None, but should always return a list."
                 )
 
+            self.__check_constraint_tuples(constraints, "constraints")
+
             if logger.getEffectiveLevel() == logging.DEBUG:
                 for constraint in constraints:
-                    logger.debug("Adding constraint {}, {}, {}".format(*constraint))
+                    logger.debug("Adding constraint " + ", ".join(map(str, constraint)))
 
             if constraints:
-                g_constraint, lbg_constraint, ubg_constraint = list(zip(*constraints, strict=True))
+                g_constraint, lbg_constraint, ubg_constraint = zip(
+                    *(c[:3] for c in constraints), strict=True
+                )
 
                 lbg_constraint = list(lbg_constraint)
                 ubg_constraint = list(ubg_constraint)
@@ -2027,6 +2030,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             # as the bounds may change from ensemble member to member.
             if ensemble_member > 0:
                 path_constraints = self.path_constraints(ensemble_member)
+                self.__check_constraint_tuples(path_constraints, "path_constraints")
 
             if len(path_constraints) > 0:
                 # We need to evaluate the path constraints at t0, as the initial time is not
@@ -2047,7 +2051,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 j = 0
                 for path_constraint in path_constraints:
                     if logger.getEffectiveLevel() == logging.DEBUG:
-                        logger.debug("Adding path constraint {}, {}, {}".format(*path_constraint))
+                        logger.debug(
+                            "Adding path constraint " + ", ".join(map(str, path_constraint))
+                        )
 
                     s = path_constraint[0].size1()
 
@@ -2127,6 +2133,20 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__debug_check_transcribe_linear_coefficients(discrete, lbx, ubx, lbg, ubg, x0, nlp)
 
         return discrete, lbx, ubx, lbg, ubg, x0, nlp
+
+    def __check_constraint_tuples(self, constraints, method):
+        for i, c in enumerate(constraints):
+            if len(c) == 4 and self.named_constraints:
+                if not isinstance(c[3], str | None):
+                    raise TypeError(
+                        f"{method}() entry #{i}: the name must be a str or None, "
+                        f"not {type(c[3]).__name__}"
+                    )
+            elif len(c) != 3:
+                raise TypeError(
+                    f"{method}() entry #{i} has {len(c)} elements; expected (f, m, M), "
+                    "or (f, m, M, name) if named_constraints is True"
+                )
 
     def clear_transcription_cache(self):
         """
