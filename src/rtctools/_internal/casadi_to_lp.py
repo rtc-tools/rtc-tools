@@ -223,7 +223,7 @@ def _build_bounds(
     Canonical bound forms emitted:
     - Both infinite: ``name Free``
     - Lower bound only: ``lb <= name``
-    - Upper bound only: ``name <= ub``
+    - Upper bound only: ``-Inf <= name <= ub`` (without ``-Inf`` the default lower bound is 0)
     - Both finite: ``lb <= name <= ub``
 
     Args:
@@ -251,7 +251,7 @@ def _build_bounds(
         if not np.isfinite(lb) and not np.isfinite(ub):
             bounds_list.append(f"{v} Free")
         elif not np.isfinite(lb):
-            bounds_list.append(f"{v} <= {_format_lp_bound(ub)}")
+            bounds_list.append(f"-Inf <= {v} <= {_format_lp_bound(ub)}")
         elif not np.isfinite(ub):
             bounds_list.append(f"{_format_lp_bound(lb)} <= {v}")
         else:
