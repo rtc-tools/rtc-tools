@@ -563,6 +563,9 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
     def goal_programming_options(self) -> dict[str, float | bool]:
         raise NotImplementedError()
 
+    def _gp_constraint_tuples(self, goal_constraints) -> list[tuple]:
+        return [(c.function(self), c.min, c.max) for c in goal_constraints]
+
     def goals(self) -> list[Goal]:
         """
         User problem returns list of :class:`Goal` objects.
