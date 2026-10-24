@@ -74,6 +74,12 @@ that reads them, like a mixin calling ``super().constraints()``, must accept bot
 
 This yields rows labelled ``release_capacity__t0__lb``, ``release_capacity__t0__ub``, and so on.
 
+Goal programming can name the constraints it adds as well: with ``named_constraints = True``
+and ``track_constraint_names = True``, set the goal programming option ``constraint_names``
+to label them ``{GoalClass}_p{priority}``, ``{GoalClass}_p{priority}_abs_pos`` / ``_abs_neg``
+for a :class:`~rtctools.optimization.min_abs_goal_programming_mixin.MinAbsGoal`, and
+``pareto_p{priority}`` for the objective constraint kept with ``keep_soft_constraints``.
+
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported

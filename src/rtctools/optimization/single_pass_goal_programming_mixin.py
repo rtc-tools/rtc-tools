@@ -238,6 +238,8 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         +---------------------------+-----------+---------------+
         | ``scale_by_problem_size`` | ``bool``  | ``False``     |
         +---------------------------+-----------+---------------+
+        | ``constraint_names``      | ``bool``  | ``False``     |
+        +---------------------------+-----------+---------------+
 
         When a priority's objective is turned into a hard constraint,
         the constraint is relaxed with ``constraint_relaxation``. Use of this option is
@@ -268,6 +270,12 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         This will make sure the objectives are always in the range [0, 1], at the cost of solving
         each goal/time step less accurately.
 
+        If ``constraint_names`` is set to ``True``, the constraints that goal programming adds
+        carry a name, ``{GoalClass}_p{priority}``, which labels their rows when
+        ``track_constraint_names`` is set, e.g. in an exported LP file. This requires
+        ``named_constraints = True``, since it makes the lists returned by ``constraints()`` and
+        ``path_constraints()`` mix 3- and 4-tuples.
+
         :returns: A dictionary of goal programming options.
         """
 
@@ -279,6 +287,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         options["check_monotonicity"] = True
         options["equality_threshold"] = 1e-8
         options["scale_by_problem_size"] = False
+        options["constraint_names"] = False
 
         # Forced options to be able to re-use GoalProgrammingMixin's
         # GoalProgrammingMixin._gp_* functions. These are not relevant for
