@@ -1,5 +1,8 @@
 import datetime
 import pathlib
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
 from unittest import TestCase
 
 import numpy as np
@@ -27,6 +30,14 @@ class TestPI(TestCase):
         self.assertEqual(parameter_config.get("group", "parameter", location_id="Location2"), 3.0)
         parameter_config.set("group", "parameter", 2.0, location_id="Location2")
         parameter_config.write()
+
+    def test_data_package_has_no_xml_side_effects(self):
+        code = "import sys, rtctools.data; assert 'xml.etree.ElementTree' not in sys.modules"
+        subprocess.run([sys.executable, "-c", code], check=True)
+
+    def test_written_xml_uses_pi_prefix(self):
+        element = ET.Element(f"{{{pi.ns['pi']}}}series")
+        self.assertTrue(ET.tostring(element).startswith(b"<pi:series"))
 
     def test_timeseries(self):
         timeseries = pi.Timeseries(self.data_config, data_path(), "timeseries_import", binary=False)
