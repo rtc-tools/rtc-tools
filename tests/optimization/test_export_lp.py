@@ -336,18 +336,10 @@ class TestLPBuilders(unittest.TestCase):
         self.assertRegex(result, r">=\s*1")
         self.assertRegex(result, r"<=\s*3")
 
-    def test_build_constraints_no_finite_bound_warns_and_emits(self):
-        """A vacuous constraint (no finite bound) must emit a warning and write '<= +Inf'."""
-        _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: X[0])
-        with self.assertLogs("rtctools", level="WARNING") as log_ctx:
-            result = _build_constraints(g, X, [-np.inf], [np.inf], names)
-        self.assertTrue(
-            any(
-                "vacuous" in msg.lower() or "no finite bound" in msg.lower()
-                for msg in log_ctx.output
-            )
-        )
-        self.assertIn("+Inf", result)
+    def test_build_constraints_vacuous_row_is_left_out(self):
+        _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: ca.vertcat(X[0], 2 * X[0]))
+        result = _build_constraints(g, X, [-np.inf, 1.0], [np.inf, np.inf], names)
+        self.assertEqual(result.strip(), "2 x0 >= 1")
 
     def test_unwritable_bounds_raise(self):
         _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: X[0])
