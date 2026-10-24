@@ -1,5 +1,7 @@
 import datetime
 import pathlib
+import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from unittest import TestCase
@@ -29,6 +31,10 @@ class TestPI(TestCase):
         self.assertEqual(parameter_config.get("group", "parameter", location_id="Location2"), 3.0)
         parameter_config.set("group", "parameter", 2.0, location_id="Location2")
         parameter_config.write()
+
+    def test_data_package_has_no_xml_side_effects(self):
+        code = "import sys, rtctools.data; assert 'xml.etree.ElementTree' not in sys.modules"
+        subprocess.run([sys.executable, "-c", code], check=True)
 
     def test_timeseries(self):
         timeseries = pi.Timeseries(self.data_config, data_path(), "timeseries_import", binary=False)
@@ -208,9 +214,11 @@ class TestPI(TestCase):
             timeseries.timezone = 0.0
             timeseries.write()
             root = ET.parse(timeseries.output_path()).getroot()
+            written = pathlib.Path(timeseries.output_path()).read_bytes()
 
         self.assertEqual(
             root.get("{http://www.w3.org/2001/XMLSchema-instance}schemaLocation"),
             "http://www.wldelft.nl/fews/PI "
             "https://fewsdocs.deltares.nl/schemas/version1.0/pi-schemas/pi_timeseries.xsd",
         )
+        self.assertTrue(written.startswith(b"<pi:TimeSeries"))
