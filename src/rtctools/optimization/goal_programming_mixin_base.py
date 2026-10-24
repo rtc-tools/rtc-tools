@@ -454,6 +454,11 @@ class StateGoal(Goal):
         )
 
 
+def _goal_name(goal: Goal) -> str:
+    goal = getattr(goal, "orig_goal", goal)  # name a converted MinAbsGoal after the user's goal
+    return f"{type(goal).__name__}_p{goal.priority}"
+
+
 class _GoalConstraint:
     def __init__(
         self,
@@ -462,6 +467,7 @@ class _GoalConstraint:
         m: float | np.ndarray | Timeseries,
         M: float | np.ndarray | Timeseries,
         optimized: bool,
+        name: str | None = None,
     ):
         assert isinstance(m, (float, np.ndarray, Timeseries))
         assert isinstance(M, (float, np.ndarray, Timeseries))
@@ -477,6 +483,9 @@ class _GoalConstraint:
         self.min = m
         self.max = M
         self.optimized = optimized
+        if name is None and goal is not None:
+            name = _goal_name(goal)
+        self.name = name
 
     def update_bounds(self, other, enforce="self"):
         # NOTE: a.update_bounds(b) is _not_ the same as  b.update_bounds(a).
@@ -564,7 +573,14 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         raise NotImplementedError()
 
     def _gp_constraint_tuples(self, goal_constraints) -> list[tuple]:
-        return [(c.function(self), c.min, c.max) for c in goal_constraints]
+        """Constraint tuples for ``goal_constraints``, named if ``constraint_names`` is set."""
+        if not self.goal_programming_options()["constraint_names"]:
+            return [(c.function(self), c.min, c.max) for c in goal_constraints]
+        if not self.named_constraints:
+            raise ValueError(
+                "goal_programming_options()['constraint_names'] requires named_constraints = True"
+            )
+        return [(c.function(self), c.min, c.max, c.name) for c in goal_constraints]
 
     def goals(self) -> list[Goal]:
         """

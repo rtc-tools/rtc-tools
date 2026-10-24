@@ -24,6 +24,10 @@ from rtctools.optimization.collocated_integrated_optimization_problem import (
 )
 from rtctools.optimization.control_tree_mixin import ControlTreeMixin
 from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
+from rtctools.optimization.min_abs_goal_programming_mixin import (
+    MinAbsGoal,
+    MinAbsGoalProgrammingMixin,
+)
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 from rtctools.optimization.optimization_problem import OptimizationProblem
 from rtctools.optimization.timeseries import Timeseries
@@ -825,6 +829,40 @@ class HiGHSControlTreeModel(ControlTreeMixin, HiGHSLinearModel):
         return {"constant_input": Timeseries(self.times(), values)}
 
 
+class _GoalNamesMixin:
+    named_constraints = True
+
+    def goal_programming_options(self):
+        options = super().goal_programming_options()
+        options["constraint_names"] = True
+        return options
+
+
+class HiGHSNamedGoalsModel(_GoalNamesMixin, HiGHSGoalProgrammingModel):
+    def goal_programming_options(self):
+        options = super().goal_programming_options()
+        options["keep_soft_constraints"] = True  # adds a pareto row per earlier priority
+        return options
+
+
+class _XAtHalfAbsGoal(MinAbsGoal):
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+
+    function_nominal = 1.0
+    priority = 1
+
+
+class HiGHSNamedMinAbsModel(
+    _GoalNamesMixin, _HiGHSMixin, MinAbsGoalProgrammingMixin, GoalProgrammingMixin, _BaseTestModel
+):
+    def min_abs_goals(self):
+        return [_XAtHalfAbsGoal()]
+
+    def goals(self):
+        return [*super().goals(), _XAtHalfMinGoal()]  # priority 2 keeps the MinAbsGoal as a row
+
+
 def _exported_lp_files(model_class):
     with _suppress_info_logging(), tempfile.TemporaryDirectory() as output_folder:
         model_class(output_folder=output_folder).optimize()
@@ -928,3 +966,31 @@ class TestLPRoundTrip(unittest.TestCase):
             list(h.getLp().row_names_),
             ["eq", "range__lb__d0", "range__ub", "_a_b__c", "_.1st", "range__lb__d1"],
         )
+
+
+class TestGoalConstraintNames(unittest.TestCase):
+    def test_goal_and_pareto_rows_are_named(self):
+        _, priority_2 = _exported_lp_files(HiGHSNamedGoalsModel)
+        self.assertEqual(
+            set(re.findall(r"(?m)^  (\S+): ", priority_2)),
+            {"_XAtHalfMaxGoal_p1", "_XAtHalfMinGoal_p2", "pareto_p1"},
+        )
+
+    def test_min_abs_rows_are_named(self):
+        _, priority_2 = _exported_lp_files(HiGHSNamedMinAbsModel)
+        self.assertEqual(
+            set(re.findall(r"(?m)^  (\S+): ", priority_2)),
+            {
+                "_XAtHalfAbsGoal_p1_abs_pos",
+                "_XAtHalfAbsGoal_p1_abs_neg",
+                "_XAtHalfAbsGoal_p1",
+                "_XAtHalfMinGoal_p2",
+            },
+        )
+
+    def test_goal_names_require_named_constraints(self):
+        class Model(HiGHSNamedGoalsModel):
+            named_constraints = False
+
+        with self.assertRaisesRegex(ValueError, "requires named_constraints = True"):
+            _exported_lp_files(Model)
