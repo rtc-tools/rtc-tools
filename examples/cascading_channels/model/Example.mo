@@ -3,7 +3,7 @@ model Example
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Discharge Inflow annotation(Placement(visible = true, transformation(origin = {-86, 34}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Level DrinkingWaterPlant(H = 10.) annotation(Placement(visible = true, transformation(origin = {38, 44}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Level Level annotation(Placement(visible = true, transformation(origin = {66, -32}, extent = {{-10, 10}, {10, -10}}, rotation = 0)));
-  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicLinear LowerChannel(
+  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicRectangular LowerChannel(
     H(each max = 1.0),
     H_b_down = -2.0,
     H_b_up = -1.5,
@@ -16,7 +16,7 @@ model Example
     semi_implicit_step_size = step_size,
     Q_nominal = 1.0
   ) annotation(Placement(visible = true, transformation(origin = {42, -24}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
-  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicLinear MiddleChannel(
+  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicRectangular MiddleChannel(
     H(each max = 1.5),
     H_b_down = -1.5,
     H_b_up = -1.0,
@@ -29,7 +29,7 @@ model Example
     semi_implicit_step_size = step_size,
     Q_nominal = 1.0
   ) annotation(Placement(visible = true, transformation(origin = {-10, 2}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
-  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicLinear UpperChannel(
+  Deltares.ChannelFlow.Hydraulic.Branches.HomotopicRectangular UpperChannel(
     H(each max = 2.0),
     H_b_down = -1.0,
     H_b_up = -0.5,
