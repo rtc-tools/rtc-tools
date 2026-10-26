@@ -240,18 +240,15 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # Split the constant inputs into those used in the DAE, and additional
         # ones used for just the objective and/or constraints
         dae_constant_inputs_names = [x.name() for x in self.dae_variables["constant_inputs"]]
-        extra_constant_inputs_name_and_size = []
-        for ensemble_member in range(self.ensemble_size):
-            extra_constant_inputs_name_and_size.extend(
-                [
-                    (x, v.values.shape[1] if v.values.ndim > 1 else 1)
-                    for x, v in self.constant_inputs(ensemble_member).items()
-                    if x not in dae_constant_inputs_names
-                ]
-            )
+        # Every ensemble member must provide all of these
+        extra_constant_inputs_name_and_size = {
+            x: v.values.shape[1] if v.values.ndim > 1 else 1
+            for x, v in self.constant_inputs(0).items()
+            if x not in dae_constant_inputs_names
+        }
 
         self.__extra_constant_inputs = []
-        for var_name, size in extra_constant_inputs_name_and_size:
+        for var_name, size in extra_constant_inputs_name_and_size.items():
             var = ca.MX.sym(var_name, size)
             self.__variables[var_name] = var
             self.__extra_constant_inputs.append(var)
@@ -1669,7 +1666,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         path_variables.T if path_variables.numel() > 0 else ca.MX(),
                         *[
                             ca.MX(extra_constant_inputs[variable][1:]).T
-                            for (variable, _) in extra_constant_inputs_name_and_size
+                            for variable in extra_constant_inputs_name_and_size
                         ],
                     ),
                     ca.repmat(extra_variables, 1, n_collocation_times - 1),
