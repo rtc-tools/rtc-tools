@@ -437,6 +437,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         else:
             bounds = self.bounds()
 
+        self.__seeds = {}
+
         # Initialize control discretization
         (
             control_size,
@@ -2318,7 +2320,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         variable_sizes = self.__variable_sizes
 
         for ensemble_member in range(self.ensemble_size):
-            seed = self.seed(ensemble_member)
+            try:
+                seed = self.__seeds[ensemble_member]
+            except KeyError:
+                seed = self.__seeds[ensemble_member] = self.seed(ensemble_member)
             for variable, inds in indices[ensemble_member].items():
                 variable_size = variable_sizes[variable]
 
