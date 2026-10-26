@@ -2742,7 +2742,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
     def __states_times_in(self, variable, t0=None, tf=None, ensemble_member=0):
         # Time stamps for this variable
-        times = self.times(variable)
+        times = np.asarray(self.times(variable))
 
         # Set default values
         if t0 is None:
