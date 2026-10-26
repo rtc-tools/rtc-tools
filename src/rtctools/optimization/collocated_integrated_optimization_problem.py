@@ -420,14 +420,17 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             ensemble_data["constant_inputs"] = _interpolate_constant_inputs(
                 self.dae_variables["constant_inputs"], raw_constant_inputs
             )
-            ensemble_data["extra_constant_inputs"] = _interpolate_constant_inputs(
-                self.__extra_constant_inputs, raw_constant_inputs
+            extra_constant_inputs = [
+                v.reshape(n_collocation_times, -1)
+                for v in _interpolate_constant_inputs(
+                    self.__extra_constant_inputs, raw_constant_inputs
+                ).values()
+            ]
+            ensemble_data["extra_constant_inputs"] = (
+                np.hstack(extra_constant_inputs)
+                if extra_constant_inputs
+                else np.empty((n_collocation_times, 0))
             )
-
-            # Handle all extra constant input data uniformly as 2D arrays
-            for k, v in ensemble_data["extra_constant_inputs"].items():
-                if v.ndim == 1:
-                    ensemble_data["extra_constant_inputs"][k] = v[:, None]
 
         if self.ensemble_specific_bounds:
             bounds = [self.bounds(ensemble_member=i) for i in range(self.ensemble_size)]
@@ -739,15 +742,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             ]
         )
         ensemble_aggregate["initial_extra_constant_inputs"] = ca.horzcat(
-            *[
-                nullvertcat(
-                    *[
-                        d["extra_constant_inputs"][variable.name()][0, :]
-                        for variable in self.__extra_constant_inputs
-                    ]
-                )
-                for d in ensemble_store
-            ]
+            *[ca.DM(d["extra_constant_inputs"][0, :]) for d in ensemble_store]
         )
         ensemble_aggregate["initial_state"] = ca.horzcat(
             *[d["initial_state"] for d in ensemble_store]
@@ -1402,12 +1397,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             # Input for map
             logger.info("Interpolating states")
 
-            accumulation_U = [None] * (
-                1
-                + 2 * len(self.dae_variables["constant_inputs"])
-                + 3
-                + len(self.__extra_constant_inputs)
-            )
+            accumulation_U = [None] * (1 + 2 * len(self.dae_variables["constant_inputs"]) + 3 + 1)
 
             # Most variables have collocation times equal to the global
             # collocation times. Use a vectorized approach to process them.
@@ -1505,12 +1495,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
             accumulation_U[1 + 2 * len(self.dae_variables["constant_inputs"]) + 2] = path_variables
 
-            for j, variable in enumerate(self.__extra_constant_inputs):
-                variable = variable.name()
-                constant_input = extra_constant_inputs[variable]
-                accumulation_U[1 + 2 * len(self.dae_variables["constant_inputs"]) + 3 + j] = ca.MX(
-                    constant_input[1:n_collocation_times, :]
-                )
+            accumulation_U[1 + 2 * len(self.dae_variables["constant_inputs"]) + 3] = ca.MX(
+                extra_constant_inputs[1:n_collocation_times, :]
+            )
 
             # Construct matrix using O(states) CasADi operations
             # This is faster than using blockcat, presumably because of the
@@ -1664,10 +1651,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         ],
                         ca.MX(collocation_times[1:]).T,
                         path_variables.T if path_variables.numel() > 0 else ca.MX(),
-                        *[
-                            ca.MX(extra_constant_inputs[variable][1:]).T
-                            for variable in extra_constant_inputs_name_and_size
-                        ],
+                        ca.MX(extra_constant_inputs[1:].T),
                     ),
                     ca.repmat(extra_variables, 1, n_collocation_times - 1),
                 ]
