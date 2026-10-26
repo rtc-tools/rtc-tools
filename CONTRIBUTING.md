@@ -82,7 +82,7 @@ If you discover a security vulnerability, please report it responsibly by emaili
     - Use existing test datasets from the `tests/data` directory when applicable.
     - For new functionality requiring specific test data, include minimal test datasets with your contribution. Keep test data files small and focused.
 5. **Documentation**: Update documentation and add examples to the `examples` folder if necessary.
-6. **Create a pull request**: Reference the corresponding issue in your PR description. Clearly describe what changes you've made, why, and any relevant context.
+6. **Create a pull request**: Reference the corresponding issue in your PR description (e.g. `Fixes #123`). Clearly describe what changes you've made, why, and any relevant context. Keep the description factual: only state what you have verified, and say how you tested. The repository is rebase-merged, so each commit message lands on `master` as written. Put the reasoning in the commit message body and keep the PR description to what a reviewer needs.
 7. **Check CI status**: Ensure all automated checks and tests pass before requesting a review.
 8. **Request review**: Request a code review from a maintainer or committer (see [Governance Roles](GOVERNANCE.md#governance-roles) and [Operational Roles](GOVERNANCE.md#operational-roles)) and address any comments or suggestions.
 
