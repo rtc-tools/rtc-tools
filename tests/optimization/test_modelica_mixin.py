@@ -171,6 +171,12 @@ class ModelShort(Model):
         return np.linspace(0.0, 1.0, 2)
 
 
+class ModelListTimes(Model):
+    def times(self, variable=None):
+        times = super().times(variable)
+        return times if variable is None else list(times)
+
+
 class ModelAggregation(Model):
     def times(self, variable=None):
         if variable == "u":
@@ -573,6 +579,16 @@ class TestModelicaMixinShort(TestCase):
     def test_objective_value(self):
         objective_value_tol = 1e-6
         self.assertAlmostLessThan(abs(self.problem.objective_value), 0.0, objective_value_tol)
+
+
+class TestModelicaMixinListTimes(TestCase):
+    def test_states_in(self):
+        problem = ModelListTimes()
+        problem.optimize()
+        states = ca.Function("f", [problem.solver_input], [problem.states_in("x")])
+        np.testing.assert_allclose(
+            np.array(states(problem.solver_output)).ravel(), problem.extract_results()["x"]
+        )
 
 
 class TestModelicaMixinAggregation(TestCase):
