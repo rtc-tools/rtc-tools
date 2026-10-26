@@ -6,7 +6,7 @@
 - [Ways to Contribute](#ways-to-contribute)
 - [Guidelines for Creating Issues](#guidelines-for-creating-issues)
   - [Security Reporting](#security-reporting)
-- [Guidelines for Creating Merge Requests](#guidelines-for-creating-merge-requests)
+- [Guidelines for Creating Pull Requests](#guidelines-for-creating-pull-requests)
 - [Commits and Commit Messages](#commits-and-commit-messages)
 - [Code Quality Guidelines](#code-quality-guidelines)
 - [Setting up a Development Environment](#setting-up-a-development-environment)
@@ -39,13 +39,13 @@ Please follow the issue template and provide as much information as possible to 
 - **Suggesting features**: If you have any ideas or suggestions for new features or improvements, 
 please share them on our [issue tracker](https://github.com/rtc-tools/rtc-tools/issues).
 Please use the appropriate category and tag for your topic and explain your motivation and use case clearly.
-- **Submitting pull requests**: If you want to contribute code or documentation to RTC-Tools, please create a pull request. Before submitting, please follow the [Guidelines for Creating Merge Requests](#guidelines-for-creating-merge-requests) below.  
+- **Submitting pull requests**: If you want to contribute code or documentation to RTC-Tools, please create a pull request. Before submitting, please follow the [Guidelines for Creating Pull Requests](#guidelines-for-creating-pull-requests) below.  
 - **Improving documentation**: If you find any errors, typos, or inconsistencies in the documentation,
  or if you want to add more examples, tutorials, or explanations, 
- please feel free to edit the documentation files in the docs folder and submit a merge request.
+ please feel free to edit the documentation files in the docs folder and submit a pull request.
 Please follow the [Sphinx syntax and style guide](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html) for writing documentation.
-- **Reviewing merge requests**: If you are familiar with RTC-Tools and want to help us maintain the quality and consistency of the code and documentation,
- please review the open merge requests and provide constructive feedback and suggestions.
+- **Reviewing pull requests**: If you are familiar with RTC-Tools and want to help us maintain the quality and consistency of the code and documentation,
+ please review the open pull requests and provide constructive feedback and suggestions.
 - **Testing new releases**: If you want to help us test the new features and bug fixes before they are officially released, 
 please install the latest development version of RTC-Tools from the [GitHub repository](https://github.com/rtc-tools/rtc-tools)
  and report any issues or feedback on the [issue tracker](https://github.com/rtc-tools/rtc-tools/issues).
@@ -71,7 +71,7 @@ If you discover a security vulnerability, please report it responsibly by emaili
 - Exposure of sensitive data or credentials
 - Input data (known or crafted) that causes crashes or data corruption
 
-## Guidelines for Creating Merge Requests
+## Guidelines for Creating Pull Requests
 
 1. **Identify or create an issue**: Before making any changes, open an issue following the [guidelines](#guidelines-for-creating-issues) above, or comment on an existing one in the [issue tracker](https://github.com/deltares/rtc-tools/issues) to discuss your ideas with the maintainers. This helps avoid duplication and ensures your contribution aligns with project goals and the [governance model](GOVERNANCE.md).
 2. **Fork or Branch**:

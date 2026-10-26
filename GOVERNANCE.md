@@ -50,7 +50,7 @@ Decisions are made by consensus when possible; if a vote is required, each votin
 
 ### Becoming a Committer
 
-Anyone can contribute to RTC-Tools by following the [Guidelines for Creating Merge Requests](CONTRIBUTING.md#guidelines-for-creating-merge-requests). Contributors who have demonstrated sustained commitment to the project may be nominated to become Committers. The path typically involves:
+Anyone can contribute to RTC-Tools by following the [Guidelines for Creating Pull Requests](CONTRIBUTING.md#guidelines-for-creating-pull-requests). Contributors who have demonstrated sustained commitment to the project may be nominated to become Committers. The path typically involves:
 
 1. **Building a track record**: Make regular, high-quality contributions as described in [Ways to Contribute](CONTRIBUTING.md#ways-to-contribute).
 2. **Nomination**: Any existing Committer can nominate a Contributor, or Contributors can express interest by contacting an existing Committer or emailing [info@rtctools.energy](mailto:info@rtctools.energy).
