@@ -73,7 +73,7 @@ If you discover a security vulnerability, please report it responsibly by emaili
 
 ## Guidelines for Creating Pull Requests
 
-1. **Identify or create an issue**: Before making any changes, open an issue following the [guidelines](#guidelines-for-creating-issues) above, or comment on an existing one in the [issue tracker](https://github.com/deltares/rtc-tools/issues) to discuss your ideas with the maintainers. This helps avoid duplication and ensures your contribution aligns with project goals and the [governance model](GOVERNANCE.md).
+1. **Identify or create an issue**: Before making any changes, open an issue following the [guidelines](#guidelines-for-creating-issues) above, or comment on an existing one in the [issue tracker](https://github.com/rtc-tools/rtc-tools/issues) to discuss your ideas with the maintainers. This helps avoid duplication and ensures your contribution aligns with project goals and the [governance model](GOVERNANCE.md).
 2. **Fork or Branch**:
     - New Contributors: Fork the repository and create a new branch in your fork.
     - Committers: Create a new branch directly in the main repository. Use a descriptive branch name, such as `feat/short-description`, `fix/issue-123`, or `docs/update-readme`.
@@ -216,7 +216,7 @@ All contributors are expected to follow the governance model outlined in the [Te
 ## Licensing and Developer Certificate of Origin (DCO)
 
 - **Code contributions**: All code must be contributed under the GNU Lesser General Public License v3.0 (LGPL-3.0).
-  See [COPYING](https://github.com/Deltares/rtc-tools/blob/master/COPYING) and [COPYING.LESSER](https://github.com/Deltares/rtc-tools/blob/master/COPYING.LESSER) for details.
+  See [COPYING](https://github.com/rtc-tools/rtc-tools/blob/master/COPYING) and [COPYING.LESSER](https://github.com/rtc-tools/rtc-tools/blob/master/COPYING.LESSER) for details.
 - **Documentation contributions**: All documentation is licensed under the [Creative Commons Attribution 4.0 International License](http://creativecommons.org/licenses/by/4.0/).
 - **SPDX Identifiers**: Please include appropriate SPDX license identifiers in new files.
 

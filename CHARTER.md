@@ -106,7 +106,7 @@ a. Collaborators acknowledge that the copyright in all new contributions will be
 
 b. Except as described in Section 7.c., all contributions to the Project are subject to the following:
 
-    i. All new inbound code contributions to the Project must be made using GNU Lesser General Public License v3.0GNU Library General Public License, Version 3.0, available at https://github.com/Deltares/rtc-tools/blob/master/COPYING (the “Project License”).
+    i. All new inbound code contributions to the Project must be made using GNU Lesser General Public License v3.0GNU Library General Public License, Version 3.0, available at https://github.com/rtc-tools/rtc-tools/blob/master/COPYING (the “Project License”).
 
     ii. All new inbound code contributions must also be accompanied by a Developer Certificate of Origin (http://developercertificate.org) sign-off in the source code system that is submitted through a TSC-approved contribution process which will bind the authorized contributor and, if not self-employed, their employer to the applicable license;
 
