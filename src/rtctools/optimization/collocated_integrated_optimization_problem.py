@@ -1415,62 +1415,15 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 + len(self.__extra_constant_inputs)
             )
 
-            # Most variables have collocation times equal to the global
-            # collocation times. Use a vectorized approach to process them.
-            interpolated_states_explicit = []
-            interpolated_states_implicit = []
-
-            place_holder = [-1] * n_collocation_times
-            for variable in collocated_variable_names:
-                var_inds = self.__indices_as_lists[ensemble_member][variable]
-
-                # If the variable times != collocation times, what we do here is just a placeholder
-                if len(var_inds) != n_collocation_times:
-                    var_inds = var_inds.copy()
-                    var_inds.extend(place_holder)
-                    var_inds = var_inds[:n_collocation_times]
-
-                interpolated_states_explicit.extend(var_inds[:-1])
-                interpolated_states_implicit.extend(var_inds[1:])
-
-            repeated_nominals = np.tile(
-                np.repeat(collocated_variable_nominals, n_collocation_times - 1), 2
+            A = self.__interpolated_states_matrix(
+                ensemble_member,
+                collocated_variable_names,
+                collocated_variable_nominals,
+                collocation_times,
             )
-            interpolated_states = (
-                ca.vertcat(X[interpolated_states_explicit], X[interpolated_states_implicit])
-                * repeated_nominals
+            interpolated_states = ca.reshape(
+                ca.mtimes(A, X), (n_collocation_times - 1, 2 * len(collocated_variables))
             )
-            interpolated_states = interpolated_states.reshape(
-                (n_collocation_times - 1, len(collocated_variables) * 2)
-            )
-
-            # Handle variables that have different collocation times.
-            for j, variable in enumerate(collocated_variable_names):
-                times = self.times(variable)
-                if n_collocation_times == len(times):
-                    # Already handled
-                    continue
-
-                interpolation_method = self.interpolation_method(variable)
-                values = self.state_vector(variable, ensemble_member=ensemble_member)
-                interpolated = interpolate(
-                    times, values, collocation_times, False, interpolation_method
-                )
-
-                nominal = self.variable_nominal(variable)
-                if nominal != 1:
-                    interpolated *= nominal
-
-                interpolated_states[:, j] = interpolated[:-1]
-                interpolated_states[:, len(collocated_variables) + j] = interpolated[1:]
-
-            # We do not cache the Jacobians, as the structure may change from ensemble member to
-            # member, and from goal programming/homotopy run to run.
-            # We could, of course, pick the states apart into controls and states, and generate
-            # Jacobians for each set separately and for each ensemble member separately, but in
-            # this case the increased complexity may well offset the performance gained by
-            # caching.
-            interpolated_states = reduce_matvec(interpolated_states, self.solver_input)
 
             accumulation_U[0] = interpolated_states
 
@@ -2078,6 +2031,92 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__debug_check_transcribe_linear_coefficients(discrete, lbx, ubx, lbg, ubg, x0, nlp)
 
         return discrete, lbx, ubx, lbg, ubg, x0, nlp
+
+    def __interpolated_states_matrix(
+        self,
+        ensemble_member,
+        collocated_variable_names,
+        collocated_variable_nominals,
+        collocation_times,
+    ):
+        """
+        Returns the matrix A for which A @ X, reshaped column-major, gives the interpolated
+        states at the start and at the end of each collocation interval.
+        """
+        n_collocation_times = len(collocation_times)
+
+        # Most variables have collocation times equal to the global
+        # collocation times. Use a vectorized approach to process them.
+        interpolated_states_explicit = []
+        interpolated_states_implicit = []
+
+        place_holder = [-1] * n_collocation_times
+        for variable in collocated_variable_names:
+            var_inds = self.__indices_as_lists[ensemble_member][variable]
+
+            # If the variable times != collocation times, what we do here is just a placeholder
+            if len(var_inds) != n_collocation_times:
+                var_inds = var_inds.copy()
+                var_inds.extend(place_holder)
+                var_inds = var_inds[:n_collocation_times]
+
+            interpolated_states_explicit.extend(var_inds[:-1])
+            interpolated_states_implicit.extend(var_inds[1:])
+
+        n_intervals = n_collocation_times - 1
+        n_columns = 2 * len(collocated_variable_names)
+        repeated_nominals = np.tile(np.repeat(collocated_variable_nominals, n_intervals), 2)
+
+        on_collocation_times = np.ones((n_columns, n_intervals), dtype=bool)
+        interpolated_rows = []
+        interpolated_cols = []
+        interpolated_values = []
+
+        # Handle variables that have different collocation times.
+        for j, variable in enumerate(collocated_variable_names):
+            times = self.times(variable)
+            if n_collocation_times == len(times):
+                # Already handled
+                continue
+
+            # Interpolation is linear, so interpolating unit vectors gives its coefficients
+            interpolation_method = self.interpolation_method(variable)
+            weights = interpolate(
+                times, ca.DM.eye(len(times)), collocation_times, False, interpolation_method
+            )
+
+            nominal = self.variable_nominal(variable)
+            if nominal != 1:
+                weights *= nominal
+
+            weights_rows, weights_cols = weights.sparsity().get_triplet()
+            weights_rows = np.array(weights_rows, dtype=int)
+            weights_cols = np.array(self.__indices_as_lists[ensemble_member][variable])[
+                weights_cols
+            ]
+            weights_values = np.array(weights.nonzeros())
+            explicit = weights_rows < n_intervals
+            implicit = weights_rows > 0
+
+            implicit_column = len(collocated_variable_names) + j
+            on_collocation_times[[j, implicit_column]] = False
+            interpolated_rows += [
+                j * n_intervals + weights_rows[explicit],
+                implicit_column * n_intervals + weights_rows[implicit] - 1,
+            ]
+            interpolated_cols += [weights_cols[explicit], weights_cols[implicit]]
+            interpolated_values += [weights_values[explicit], weights_values[implicit]]
+
+        rows = np.flatnonzero(on_collocation_times)
+        cols = np.array(interpolated_states_explicit + interpolated_states_implicit)[rows]
+        values = repeated_nominals[rows]
+        return ca.DM.triplet(
+            np.concatenate((rows, *interpolated_rows)).tolist(),
+            np.concatenate((cols, *interpolated_cols)).tolist(),
+            ca.DM(np.concatenate((values, *interpolated_values))),
+            n_columns * n_intervals,
+            self.solver_input.size1(),
+        )
 
     def clear_transcription_cache(self):
         """
