@@ -478,6 +478,13 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
         self.assertEqual(len(states_eval), len(verify_eval))
         self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
 
+        # Whole horizon through an alias with a negative sign
+        np.testing.assert_allclose(
+            eval_expr(self.problem.states_in("negative_alias")),
+            self.results["negative_alias"],
+            atol=self.tolerance,
+        )
+
     def test_assigning_to_returned_symbols(self):
         extra = self.problem._extra_variable.name()
         self.problem.extra_variable(extra)[0] = 0
