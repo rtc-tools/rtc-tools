@@ -666,7 +666,10 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                 pass
             elif goal.has_target_bounds:
                 if not np.all(np.isfinite(m)) or not np.all(np.isfinite(M)):
-                    raise Exception(f"No function range specified for goal {goal}")
+                    raise ValueError(
+                        f"No finite function range for goal {goal}; "
+                        f"set function_range to a finite (min, max)"
+                    )
 
                 if np.any(m >= M):
                     raise Exception(f"Invalid function range for goal {goal}")

@@ -927,7 +927,7 @@ class TestGoalProgrammingInvalidGoals(TestCase):
 
     def test_function_range_present(self):
         self.problem._goals = [InvalidGoal(target_min=2.0)]
-        with self.assertRaisesRegex(Exception, "No function range specified"):
+        with self.assertRaisesRegex(ValueError, "No finite function range"):
             self.problem.optimize()
 
     def test_function_range_valid(self):
