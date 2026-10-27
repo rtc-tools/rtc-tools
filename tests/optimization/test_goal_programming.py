@@ -1175,3 +1175,18 @@ class TestGoalProgrammingEnsembleBoundsAutoSetFunctionRange(TestCase):
             f"Automatically set function_range is incorrect. "
             f"Expected {problem.bounds(0).get('x')}, got {function_range}",
         )
+
+
+class TestGoalProgrammingStateGoalExplicitFunctionRange(TestCase):
+    def test_explicit_function_range_is_kept(self):
+        for problem in (Model(), ModelForUnequalBoundsDicts()):
+            goal = ExplicitFunctionRangeGoal(problem)
+            self.assertEqual(goal.function_range, (-20.0, 20.0))
+
+    def test_unknown_state_raises(self):
+        class UnknownStateGoal(ExplicitFunctionRangeGoal):
+            state = "unknown"
+
+        problem = Model()
+        with self.assertRaisesRegex(Exception, "has no bounds or does not exist"):
+            UnknownStateGoal(problem)
