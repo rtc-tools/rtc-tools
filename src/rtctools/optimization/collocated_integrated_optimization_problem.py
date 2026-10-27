@@ -606,13 +606,13 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             initial_state_indices = [None] * n
 
             # Derivatives take a bit more effort to vectorize, as we can have
-            # both constant values and elements in the state vector
+            # both slopes from history and elements in the state vector
             initial_derivatives = ca.MX.zeros((n, 1))
             init_der_variable = []
             init_der_variable_indices = []
             init_der_variable_nominals = []
-            init_der_constant = []
-            init_der_constant_values = []
+            init_der_history = []
+            init_der_history_values = []
 
             history = self.history(ensemble_member)
 
@@ -633,26 +633,29 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     # We do interpolation here instead of relying on der_at. This is faster because:
                     # 1. We can reuse the history variable.
                     # 2. We know that "variable" is a canonical state
-                    # 3. We know that we are only dealing with history (numeric values, not
-                    #    symbolics)
                     try:
                         h = history[variable]
-                        if h.times[0] == t0 or len(h.values) == 1:
+                        if h.times[0] == t0 or len(h.values) == 1 or np.isnan(h.values[-2]):
                             init_der = 0.0
                         else:
                             assert h.times[-1] == t0
-                            init_der = (h.values[-1] - h.values[-2]) / (h.times[-1] - h.times[-2])
+                            value_t0 = h.values[-1]
+                            if np.isnan(value_t0):
+                                value_t0 = X[initial_state_indices[j]] * self.variable_nominal(
+                                    variable
+                                )
+                            init_der = (value_t0 - h.values[-2]) / (h.times[-1] - h.times[-2])
                     except KeyError:
                         init_der = 0.0
 
-                    init_der_constant_values.append(init_der)
-                    init_der_constant.append(j)
+                    init_der_history_values.append(init_der)
+                    init_der_history.append(j)
 
             initial_derivatives[init_der_variable] = X[init_der_variable_indices] * np.array(
                 init_der_variable_nominals
             )
-            if len(init_der_constant_values) > 0:
-                initial_derivatives[init_der_constant] = init_der_constant_values
+            if len(init_der_history_values) > 0:
+                initial_derivatives[init_der_history] = ca.vertcat(*init_der_history_values)
 
             ensemble_data["initial_state"] = X[initial_state_indices] * np.concatenate(
                 (integrated_variable_nominals, collocated_variable_nominals)
