@@ -478,6 +478,14 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
         self.assertEqual(len(states_eval), len(verify_eval))
         self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
 
+    def test_assigning_to_returned_symbols(self):
+        extra = self.problem._extra_variable.name()
+        self.problem.extra_variable(extra)[0] = 0
+
+        f = ca.Function("f", [self.problem.solver_input], [self.problem.extra_variable(extra)])
+        e = float(f(self.problem.solver_output))
+        self.assertAlmostEqual(e, self.results[extra], self.tolerance)
+
     def test_der(self):
         der = self.problem.der_at("x", 0.05)
         verify = (self.problem.state_at("x", 0.05) - self.problem.state_at("x", 0.0)) / 0.05
