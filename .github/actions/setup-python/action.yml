@@ -5,7 +5,7 @@ inputs:
   uv-version:
     description: "Version of uv to install"
     required: false
-    default: "0.7.9"
+    default: "0.13.5"
   dependency-groups:
     description: "Space-separated list of dependency groups to install (e.g. 'deploy tests')"
     required: false
