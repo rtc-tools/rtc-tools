@@ -2825,6 +2825,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         *,
         return_times: bool = False,
     ) -> ca.MX | tuple[ca.DM, ca.MX]:
+        if t0 is None and tf is None and not return_times and not self.integrate_states:
+            # The whole horizon: no knots to add, so skip the interval selection
+            canonical, sign = self.alias_relation.canonical_signed(variable)
+            state = self.__scaled_state_vector(canonical, ensemble_member)
+            if sign < 0:
+                state *= -1
+            return state
+
         x, t = self.__states_times_in(variable, t0, tf, ensemble_member)
 
         if return_times:

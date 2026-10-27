@@ -464,6 +464,14 @@ class TestModelicaMixin(TestCase, unittest.TestCase):
         self.assertEqual(len(states_eval), len(verify_eval))
         self.assertAlmostEqual(states_eval, verify_eval, self.tolerance)
 
+        # Whole horizon, also through an alias with a negative sign
+        for variable in ("x", "negative_alias"):
+            np.testing.assert_allclose(
+                eval_expr(self.problem.states_in(variable)),
+                self.results[variable],
+                atol=self.tolerance,
+            )
+
     def test_der(self):
         der = self.problem.der_at("x", 0.05)
         verify = (self.problem.state_at("x", 0.05) - self.problem.state_at("x", 0.0)) / 0.05
