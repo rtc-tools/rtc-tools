@@ -376,6 +376,9 @@ class StateGoal(Goal):
     direct base class, by implementing the ``function`` method and providing the
     ``function_range`` and ``function_nominal`` class variables manually.
 
+    An explicitly set ``function_range`` is used as is; otherwise it is derived from the bounds of
+    the state.
+
     """
 
     #: The state on which the goal acts.
@@ -394,11 +397,14 @@ class StateGoal(Goal):
 
         # Extract state range from model
         if self.has_target_bounds:
+            derive_function_range = np.array_equal(
+                self.function_range, (np.nan, np.nan), equal_nan=True
+            )
             try:
                 if optimization_problem.ensemble_specific_bounds:
                     bounds = optimization_problem.bounds(0)
                     bounds_state_ref = bounds[self.state]
-                    if np.array_equal(self.function_range, (np.nan, np.nan), equal_nan=True):
+                    if derive_function_range:
                         # If the user has not set the function range themselves, we
                         # try and set it automatically. This is only possible if the
                         # bounds are the same for all ensemble members.
@@ -419,9 +425,11 @@ class StateGoal(Goal):
                                 )
                 else:
                     bounds = optimization_problem.bounds()
-                self.function_range = bounds[self.state]
+                state_bounds = bounds[self.state]
             except KeyError:
                 raise Exception(f"State {self.state} has no bounds or does not exist in the model.")
+            if derive_function_range:
+                self.function_range = state_bounds
 
             if self.function_range[0] is None:
                 raise Exception(f"Please provide a lower bound for state {self.state}.")
