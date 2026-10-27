@@ -110,6 +110,13 @@ class Model(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
             return super().interpolation_method(variable)
 
 
+class ModelSharedControlSlots(Model):
+    def discretize_control(self, variable, ensemble_member, times, offset):
+        if variable == "u":
+            return offset + (np.arange(len(times)) + 1) // 2
+        return super().discretize_control(variable, ensemble_member, times, offset)
+
+
 class TestNumericalInterpolation(TestCase):
     def setUp(self):
         self.problem = Model()
@@ -388,6 +395,20 @@ class TestSymbolicInterpolation(TestCase):
         u_copy = results["u_copy"]
 
         self.assertAlmostEqual(np.delete(u_copy, 10), u, self.tolerance)
+        self.assertAlmostEqual(u_copy[10], (u[10] + u[9]) / 2.0, self.tolerance)
+
+    def test_map_linear_shared_control_slots(self):
+        # u[9] and u[10], on either side of t = 0.5, share one X slot
+        self.problem = ModelSharedControlSlots()
+        self.problem._equidistant = False
+        self.problem._interpolation_u = self.problem.INTERPOLATION_LINEAR
+        self.problem.optimize()
+
+        results = self.problem.extract_results()
+
+        u = results["u"]
+        u_copy = results["u_copy"]
+
         self.assertAlmostEqual(u_copy[10], (u[10] + u[9]) / 2.0, self.tolerance)
 
     def test_map_block_forward(self):
