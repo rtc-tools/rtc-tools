@@ -41,8 +41,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-netcdf = ["netCDF4"]
-all = ["netCDF4"]
+netcdf = ["netCDF4 >= 1.6.1"]
+all = ["netCDF4 >= 1.6.1"]
 
 [dependency-groups]
 build = [
