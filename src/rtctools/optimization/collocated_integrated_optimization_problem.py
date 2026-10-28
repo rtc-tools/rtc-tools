@@ -2757,7 +2757,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             history_timeseries = history[canonical]
                         except KeyError:
                             if extrapolate:
-                                sym = variable_values[0]
+                                sym = variable_values[0] * nominal
                             else:
                                 sym = np.nan
                         else:
