@@ -135,12 +135,13 @@ class TestIntegratedStateNominal(TestCase):
     def test_state_at(self):
         times = self.problem.times()
         # 0.025 lies between the initial state and the first integrated state
-        for t in [0.0, 0.025]:
-            np.testing.assert_allclose(
-                self.evaluate(self.problem.state_at("x", t)),
-                np.interp(t, times, self.results["x"]),
-                atol=1e-6,
-            )
+        for variable in ["x", "negative_x"]:
+            for t in [0.0, 0.025]:
+                np.testing.assert_allclose(
+                    self.evaluate(self.problem.state_at(variable, t)),
+                    np.interp(t, times, self.results[variable]),
+                    atol=1e-6,
+                )
 
     def test_states_in_and_path_expressions(self):
         x = self.results["x"]
