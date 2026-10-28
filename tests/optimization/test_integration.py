@@ -1,5 +1,6 @@
 import logging
 
+import casadi as ca
 import numpy as np
 
 from rtctools.optimization.collocated_integrated_optimization_problem import (
@@ -100,6 +101,52 @@ class TestSingleShooting(TestCase):
         self.problem.optimize()
         self.results = self.problem.extract_results()
         self.tolerance = 1e-6
+
+
+class SingleShootingNominalModel(SingleShootingBaseModel):
+    def bounds(self):
+        return {"u": (0.5, 0.5)}
+
+    def variable_nominal(self, variable):
+        if variable == "x":
+            return 10.0
+        return super().variable_nominal(variable)
+
+    def objective(self, ensemble_member):
+        return (self.state_at("x", 1.0, ensemble_member=ensemble_member) - 1.0) ** 2
+
+
+class TestIntegratedStateNominal(TestCase):
+    def setUp(self):
+        self.problem = SingleShootingNominalModel()
+        self.problem.optimize()
+        self.results = self.problem.extract_results()
+
+    def evaluate(self, expression):
+        f = ca.Function("f", [self.problem.solver_input], [expression])
+        return np.array(f(self.problem.solver_output)).ravel()
+
+    def test_results(self):
+        # Implicit Euler with k = 1, dt = 0.05: x[i] = x[i - 1] + dt * (x[i] + u)
+        x = self.results["x"]
+        np.testing.assert_allclose(x[1:], (x[:-1] + 0.05 * 0.5) / (1 - 0.05), rtol=1e-6)
+        np.testing.assert_allclose(x[-1], 1.0, atol=1e-6)
+
+    def test_state_at(self):
+        times = self.problem.times()
+        # 0.025 lies between the initial state and the first integrated state
+        for t in [0.0, 0.025]:
+            np.testing.assert_allclose(
+                self.evaluate(self.problem.state_at("x", t)),
+                np.interp(t, times, self.results["x"]),
+                atol=1e-6,
+            )
+
+    def test_states_in_and_path_expressions(self):
+        x = self.results["x"]
+        np.testing.assert_allclose(self.evaluate(self.problem.states_in("x")), x, rtol=1e-6)
+        path_x = self.problem.map_path_expression(self.problem.state("x"), 0)
+        np.testing.assert_allclose(self.evaluate(path_x), x, rtol=1e-6)
 
 
 class SingleShootingGoalProgrammingModel(GoalProgrammingMixin, SingleShootingBaseModel):
