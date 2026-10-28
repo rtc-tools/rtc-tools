@@ -2747,7 +2747,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                         found = True
                     else:
                         variable_values = ca.horzcat(
-                            sign * X[inds], self.__integrators[ensemble_member][canonical] / nominal
+                            X[inds], self.__integrators[ensemble_member][canonical] / nominal
                         ).T
                 else:
                     variable_values = X[inds]
