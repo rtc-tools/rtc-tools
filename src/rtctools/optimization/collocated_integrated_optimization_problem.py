@@ -437,6 +437,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         else:
             bounds = self.bounds()
 
+        self.__seeds = {}
+
         # Initialize control discretization
         (
             control_size,
@@ -508,6 +510,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__control_size = control_size
         self.__state_size = state_size
         self.__symbol_cache = {}
+        self.__state_vector_cache = {}
 
         # Free variables for the collocated optimization problem
         if self.integrate_states:
@@ -2323,7 +2326,10 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         variable_sizes = self.__variable_sizes
 
         for ensemble_member in range(self.ensemble_size):
-            seed = self.seed(ensemble_member)
+            try:
+                seed = self.__seeds[ensemble_member]
+            except KeyError:
+                seed = self.__seeds[ensemble_member] = self.seed(ensemble_member)
             for variable, inds in indices[ensemble_member].items():
                 variable_size = variable_sizes[variable]
 
@@ -2607,8 +2613,13 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         return results
 
     def state_vector(self, variable, ensemble_member=0):
-        indices = self.__indices[ensemble_member][variable]
-        return self.solver_input[indices]
+        key = (ensemble_member, variable)
+        try:
+            return self.__state_vector_cache[key]
+        except KeyError:
+            indices = self.__indices[ensemble_member][variable]
+            symbols = self.__state_vector_cache[key] = self.solver_input[indices]
+            return symbols
 
     def state_at(self, variable, t, ensemble_member=0, scaled=False, extrapolate=True):
         if isinstance(variable, ca.MX):
