@@ -80,6 +80,10 @@ goal programming option ``constraint_names`` to label them ``{GoalClass}_p{prior
 :class:`~rtctools.optimization.min_abs_goal_programming_mixin.MinAbsGoal`, and
 ``pareto_p{priority}`` for the objective constraint kept with ``keep_soft_constraints``.
 
+LP readers give a variable without an explicit lower bound the lower bound 0. A variable with
+only an upper bound is therefore written as ``-Inf <= x <= ub``, so that a negative upper bound
+does not make the problem infeasible. Keep the ``-Inf`` if you edit the file by hand.
+
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported
