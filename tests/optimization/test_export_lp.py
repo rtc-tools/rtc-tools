@@ -831,14 +831,18 @@ class TestLPRoundTrip(unittest.TestCase):
         self.assert_round_trip(HiGHSGoalProgrammingModel)
 
     def test_upper_bounded_variable_is_free_below(self):
+        # An LP reader gives a variable without an explicit lower bound the lower bound 0, which
+        # makes a negative upper bound infeasible.
         X = ca.SX.sym("X", 1)
         constraints = _build_constraints(X[0], X, [-100.0], [np.inf], ["x0"])
-        bounds, _, _ = _build_bounds(["x0"], [-np.inf], [5.0], [False])
-        with tempfile.TemporaryDirectory() as output_folder:
-            _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
-            status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
-        self.assertEqual(status, "Optimal")
-        self.assertEqual(objective, -100.0)
+        for ub in (5.0, -10.0):
+            with self.subTest(ub=ub):
+                bounds, _, _ = _build_bounds(["x0"], [-np.inf], [ub], [False])
+                with tempfile.TemporaryDirectory() as output_folder:
+                    _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
+                    status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+                self.assertEqual(status, "Optimal")
+                self.assertEqual(objective, -100.0)
 
     def test_control_tree(self):
         self.assert_round_trip(HiGHSControlTreeModel)
