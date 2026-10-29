@@ -31,17 +31,6 @@ def nullvertcat(*L):
         return ca.vertcat(*L)
 
 
-def reduce_matvec(e, v):
-    """
-    Reduces the MX graph e of affine operations on v into a matrix-vector product plus a constant.
-
-    This reduces the number of nodes required to represent the affine operations.
-    """
-    Af = ca.Function("Af", [v], [ca.jacobian(e, v), ca.vec(e)])
-    A, b = Af(0)
-    return ca.reshape(ca.mtimes(A, v) + b, e.shape)
-
-
 def substitute_in_external(
     expr: list[ca.MX],
     symbols: list[ca.MX],

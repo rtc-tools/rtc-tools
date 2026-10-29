@@ -14,7 +14,6 @@ from rtctools._internal.casadi_helpers import (
     interpolate,
     is_affine,
     nullvertcat,
-    reduce_matvec,
     substitute_in_external,
 )
 from rtctools._internal.casadi_to_lp import (
@@ -614,7 +613,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             initial_derivatives = ca.MX.zeros((n, 1))
             init_der_variable = []
             init_der_variable_indices = []
-            init_der_variable_nominals = []
             init_der_history = []
             init_der_history_values = []
 
@@ -627,7 +625,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     i = self.__differentiated_states_map[variable]
 
                     initial_der_name = self.__initial_derivative_names[i]
-                    init_der_variable_nominals.append(self.variable_nominal(initial_der_name))
                     init_der_variable_indices.append(
                         self.__indices[ensemble_member][initial_der_name]
                     )
@@ -645,9 +642,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             assert h.times[-1] == t0
                             value_t0 = h.values[-1]
                             if np.isnan(value_t0):
-                                value_t0 = X[initial_state_indices[j]] * self.variable_nominal(
-                                    variable
-                                )
+                                value_t0 = self.__scaled_solver_input[initial_state_indices[j]]
                             init_der = (value_t0 - h.values[-2]) / (h.times[-1] - h.times[-2])
                     except KeyError:
                         init_der = 0.0
@@ -655,9 +650,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     init_der_history_values.append(init_der)
                     init_der_history.append(j)
 
-            initial_derivatives[init_der_variable] = X[init_der_variable_indices] * np.array(
-                init_der_variable_nominals
-            )
+            initial_derivatives[init_der_variable] = self.__scaled_solver_input[
+                init_der_variable_indices
+            ]
             if len(init_der_history_values) > 0:
                 initial_derivatives[init_der_history] = ca.vertcat(*init_der_history_values)
 
@@ -752,9 +747,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         )
         ensemble_aggregate["initial_derivatives"] = ca.horzcat(
             *[d["initial_derivatives"] for d in ensemble_store]
-        )
-        ensemble_aggregate["initial_derivatives"] = reduce_matvec(
-            ensemble_aggregate["initial_derivatives"], self.solver_input
         )
         ensemble_aggregate["initial_path_variables"] = ca.horzcat(
             *[d["initial_path_variables"] for d in ensemble_store]
@@ -2868,8 +2860,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # Special case t being t0 for differentiated states
         if t == self.initial_time:
             # We have a special symbol for t0 derivatives
-            X = self.solver_input
-
             canonical, sign = self.alias_relation.canonical_signed(variable)
             try:
                 i = self.__differentiated_states_map[canonical]
@@ -2878,10 +2868,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 pass
             else:
                 initial_der_name = self.__initial_derivative_names[i]
-                nominal = self.variable_nominal(initial_der_name)
-                idx = self.__indices[ensemble_member][initial_der_name]
-
-                return nominal * sign * X[idx]
+                return sign * self.__scaled_state_vector(initial_der_name, ensemble_member)
 
         # Time stamps for this variable
         times = self.times(variable)

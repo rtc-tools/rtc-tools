@@ -35,8 +35,8 @@ def repeated_scalings(nlp, nominals):
 
 
 class ModelHistoryScaled(ModelHistory):
-    # Not 2, because CasADi expands x * 2 to x + x
-    nominals = {3.0}
+    # Not 2, because CasADi expands x * 2 to x + x. 30 is the nominal of initial_der(x), 3 / dt.
+    nominals = {3.0, 30.0}
 
     def variable_nominal(self, variable):
         if variable in {"x", "w"}:
@@ -47,6 +47,7 @@ class ModelHistoryScaled(ModelHistory):
     def constraints(self, ensemble_member):
         t0 = self.initial_time
         return [
+            (self.der_at("x", t0, ensemble_member), -10.0, 10.0),
             (self.state_at("x", t0 + 0.05, ensemble_member), -10.0, 10.0),
             (ca.sum1(self.states_in("x", ensemble_member=ensemble_member)), -100.0, 100.0),
         ]
