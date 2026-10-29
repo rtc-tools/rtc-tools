@@ -45,6 +45,11 @@ programming solves more than one priority, each priority gets its own file with 
 constant terms an LP file can hold (no NaN, no lower bound of +inf, no upper bound of -inf, no
 infinite constant). It raises a :exc:`ValueError` otherwise.
 
+Variable names that an LP reader would misread get a ``_`` prefix in the file: section keywords
+such as ``max``, names starting with ``inf``, a digit or a period, and names starting with
+``e`` or ``E`` followed by a digit, another ``e`` or ``E``, or nothing (``e``, ``e5``, ``eels``).
+Names that end up equal get a ``__d{n}`` suffix.
+
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported
