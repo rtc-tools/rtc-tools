@@ -14,7 +14,6 @@ from rtctools._internal.casadi_helpers import (
     interpolate,
     is_affine,
     nullvertcat,
-    reduce_matvec,
     substitute_in_external,
 )
 from rtctools._internal.casadi_to_lp import (
@@ -487,6 +486,17 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 else:
                     self.__indices_as_lists[ensemble_member][k] = [int(i) for i in v]
 
+        # All scaled states select from this one product, so the expanded NLP scales X only once
+        x_nominals = np.ones(X.size1())
+        for ensemble_member in range(self.ensemble_size):
+            for variable, inds in self.__indices_as_lists[ensemble_member].items():
+                nominal = np.asarray(self.variable_nominal(variable), dtype=float)
+                variable_size = self.__variable_sizes[variable]
+                n_times = len(inds) // variable_size
+                x_nominals[inds] = np.broadcast_to(nominal, (n_times, variable_size)).T.ravel()
+        self.__scaled_solver_input = X * x_nominals
+        self.__scaled_state_vector_cache = {}
+
         # Initialize bound and seed vectors
         discrete = np.zeros(X.size1(), dtype=bool)
 
@@ -523,14 +533,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             logger.debug(f"Collocating variables {repr(collocated_variables)}")
 
         integrated_variable_names = [v.name() for v in integrated_variables]
-        integrated_variable_nominals = np.array(
-            [self.variable_nominal(v) for v in integrated_variable_names]
-        )
-
         collocated_variable_names = [v.name() for v in collocated_variables]
-        collocated_variable_nominals = np.array(
-            [self.variable_nominal(v) for v in collocated_variable_names]
-        )
 
         # Split derivatives into "integrated" and "collocated" lists.
 
@@ -606,13 +609,12 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             initial_state_indices = [None] * n
 
             # Derivatives take a bit more effort to vectorize, as we can have
-            # both constant values and elements in the state vector
+            # both slopes from history and elements in the state vector
             initial_derivatives = ca.MX.zeros((n, 1))
             init_der_variable = []
             init_der_variable_indices = []
-            init_der_variable_nominals = []
-            init_der_constant = []
-            init_der_constant_values = []
+            init_der_history = []
+            init_der_history_values = []
 
             history = self.history(ensemble_member)
 
@@ -623,7 +625,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     i = self.__differentiated_states_map[variable]
 
                     initial_der_name = self.__initial_derivative_names[i]
-                    init_der_variable_nominals.append(self.variable_nominal(initial_der_name))
                     init_der_variable_indices.append(
                         self.__indices[ensemble_member][initial_der_name]
                     )
@@ -633,54 +634,43 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     # We do interpolation here instead of relying on der_at. This is faster because:
                     # 1. We can reuse the history variable.
                     # 2. We know that "variable" is a canonical state
-                    # 3. We know that we are only dealing with history (numeric values, not
-                    #    symbolics)
                     try:
                         h = history[variable]
-                        if h.times[0] == t0 or len(h.values) == 1:
+                        if h.times[0] == t0 or len(h.values) == 1 or np.isnan(h.values[-2]):
                             init_der = 0.0
                         else:
                             assert h.times[-1] == t0
-                            init_der = (h.values[-1] - h.values[-2]) / (h.times[-1] - h.times[-2])
+                            value_t0 = h.values[-1]
+                            if np.isnan(value_t0):
+                                value_t0 = self.__scaled_solver_input[initial_state_indices[j]]
+                            init_der = (value_t0 - h.values[-2]) / (h.times[-1] - h.times[-2])
                     except KeyError:
                         init_der = 0.0
 
-                    init_der_constant_values.append(init_der)
-                    init_der_constant.append(j)
+                    init_der_history_values.append(init_der)
+                    init_der_history.append(j)
 
-            initial_derivatives[init_der_variable] = X[init_der_variable_indices] * np.array(
-                init_der_variable_nominals
-            )
-            if len(init_der_constant_values) > 0:
-                initial_derivatives[init_der_constant] = init_der_constant_values
+            initial_derivatives[init_der_variable] = self.__scaled_solver_input[
+                init_der_variable_indices
+            ]
+            if len(init_der_history_values) > 0:
+                initial_derivatives[init_der_history] = ca.vertcat(*init_der_history_values)
 
-            ensemble_data["initial_state"] = X[initial_state_indices] * np.concatenate(
-                (integrated_variable_nominals, collocated_variable_nominals)
-            )
+            ensemble_data["initial_state"] = self.__scaled_solver_input[initial_state_indices]
             ensemble_data["initial_derivatives"] = initial_derivatives
 
             # Store initial path variables
             initial_path_variable_inds = []
 
-            path_variables_size = sum(self.__variable_sizes[v] for v in self.__path_variable_names)
-            path_variables_nominals = np.ones(path_variables_size)
-
-            offset = 0
             for variable in self.__path_variable_names:
                 step = len(self.times(variable))
                 initial_path_variable_inds.extend(
                     self.__indices_as_lists[ensemble_member][variable][0::step]
                 )
 
-                variable_size = self.__variable_sizes[variable]
-                path_variables_nominals[offset : offset + variable_size] = self.variable_nominal(
-                    variable
-                )
-                offset += variable_size
-
-            ensemble_data["initial_path_variables"] = (
-                X[initial_path_variable_inds] * path_variables_nominals
-            )
+            ensemble_data["initial_path_variables"] = self.__scaled_solver_input[
+                initial_path_variable_inds
+            ]
 
         # Replace parameters which are constant across the entire ensemble
         constant_parameters = []
@@ -755,20 +745,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         ensemble_aggregate["initial_state"] = ca.horzcat(
             *[d["initial_state"] for d in ensemble_store]
         )
-        ensemble_aggregate["initial_state"] = reduce_matvec(
-            ensemble_aggregate["initial_state"], self.solver_input
-        )
         ensemble_aggregate["initial_derivatives"] = ca.horzcat(
             *[d["initial_derivatives"] for d in ensemble_store]
         )
-        ensemble_aggregate["initial_derivatives"] = reduce_matvec(
-            ensemble_aggregate["initial_derivatives"], self.solver_input
-        )
         ensemble_aggregate["initial_path_variables"] = ca.horzcat(
             *[d["initial_path_variables"] for d in ensemble_store]
-        )
-        ensemble_aggregate["initial_path_variables"] = reduce_matvec(
-            ensemble_aggregate["initial_path_variables"], self.solver_input
         )
 
         if (self.__dae_residual_function_collocated is None) and (
@@ -1357,8 +1338,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     assert history_timeseries.times[-1] == t0
 
                     if np.isnan(history_timeseries.values[-1]):
-                        t0_val = self.state_vector(variable, ensemble_member=ensemble_member)[0]
-                        t0_val *= self.variable_nominal(variable)
+                        t0_val = self.__scaled_state_vector(variable, ensemble_member)[0]
 
                         val = (t0_val - history_timeseries.values[-2]) / (
                             t0 - history_timeseries.times[-2]
@@ -1395,11 +1375,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
             accumulation_X0 = []
             if self.integrate_states:
                 for variable in integrated_variable_names:
-                    value = self.state_vector(variable, ensemble_member=ensemble_member)[0]
-                    nominal = self.variable_nominal(variable)
-                    if nominal != 1:
-                        value *= nominal
-                    accumulation_X0.append(value)
+                    accumulation_X0.append(self.__scaled_state_vector(variable, ensemble_member)[0])
             accumulation_X0 = ca.vertcat(*accumulation_X0)
 
             # Input for map
@@ -1412,62 +1388,16 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 + len(self.__extra_constant_inputs)
             )
 
-            # Most variables have collocation times equal to the global
-            # collocation times. Use a vectorized approach to process them.
-            interpolated_states_explicit = []
-            interpolated_states_implicit = []
-
-            place_holder = [-1] * n_collocation_times
-            for variable in collocated_variable_names:
-                var_inds = self.__indices_as_lists[ensemble_member][variable]
-
-                # If the variable times != collocation times, what we do here is just a placeholder
-                if len(var_inds) != n_collocation_times:
-                    var_inds = var_inds.copy()
-                    var_inds.extend(place_holder)
-                    var_inds = var_inds[:n_collocation_times]
-
-                interpolated_states_explicit.extend(var_inds[:-1])
-                interpolated_states_implicit.extend(var_inds[1:])
-
-            repeated_nominals = np.tile(
-                np.repeat(collocated_variable_nominals, n_collocation_times - 1), 2
+            n_intervals = n_collocation_times - 1
+            A = self.__interpolated_states_matrix(
+                ensemble_member,
+                collocated_variable_names,
+                collocation_times,
             )
-            interpolated_states = (
-                ca.vertcat(X[interpolated_states_explicit], X[interpolated_states_implicit])
-                * repeated_nominals
+            interpolated_states = ca.reshape(
+                ca.mtimes(A, self.__scaled_solver_input),
+                (n_intervals, 2 * len(collocated_variables)),
             )
-            interpolated_states = interpolated_states.reshape(
-                (n_collocation_times - 1, len(collocated_variables) * 2)
-            )
-
-            # Handle variables that have different collocation times.
-            for j, variable in enumerate(collocated_variable_names):
-                times = self.times(variable)
-                if n_collocation_times == len(times):
-                    # Already handled
-                    continue
-
-                interpolation_method = self.interpolation_method(variable)
-                values = self.state_vector(variable, ensemble_member=ensemble_member)
-                interpolated = interpolate(
-                    times, values, collocation_times, False, interpolation_method
-                )
-
-                nominal = self.variable_nominal(variable)
-                if nominal != 1:
-                    interpolated *= nominal
-
-                interpolated_states[:, j] = interpolated[:-1]
-                interpolated_states[:, len(collocated_variables) + j] = interpolated[1:]
-
-            # We do not cache the Jacobians, as the structure may change from ensemble member to
-            # member, and from goal programming/homotopy run to run.
-            # We could, of course, pick the states apart into controls and states, and generate
-            # Jacobians for each set separately and for each ensemble member separately, but in
-            # this case the increased complexity may well offset the performance gained by
-            # caching.
-            interpolated_states = reduce_matvec(interpolated_states, self.solver_input)
 
             accumulation_U[0] = interpolated_states
 
@@ -1486,25 +1416,15 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 collocation_times[1:n_collocation_times]
             )
 
-            path_variables = [None] * len(self.path_variables)
-            for j, variable in enumerate(self.__path_variable_names):
+            path_variables_inds = []
+            for variable in self.__path_variable_names:
                 variable_size = self.__variable_sizes[variable]
-                values = self.state_vector(variable, ensemble_member=ensemble_member)
-
-                nominal = self.variable_nominal(variable)
-                if isinstance(nominal, np.ndarray):
-                    nominal = (
-                        np.broadcast_to(nominal, (n_collocation_times, variable_size))
-                        .transpose()
-                        .ravel()
-                    )
-                    values *= nominal
-                elif nominal != 1:
-                    values *= nominal
-
-                path_variables[j] = values.reshape((n_collocation_times, variable_size))[1:, :]
-
-            path_variables = reduce_matvec(ca.horzcat(*path_variables), self.solver_input)
+                inds = self.__indices_as_lists[ensemble_member][variable]
+                inds = np.array(inds).reshape((variable_size, n_collocation_times))
+                path_variables_inds.extend(inds[:, 1:].ravel().tolist())
+            path_variables = ca.reshape(
+                self.__scaled_solver_input[path_variables_inds], (n_intervals, path_variables_size)
+            )
 
             accumulation_U[1 + 2 * len(self.dae_variables["constant_inputs"]) + 2] = path_variables
 
@@ -1617,8 +1537,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     # Inputs
                     states_and_algebraics_and_controls = ca.vertcat(
                         *[
-                            self.variable_nominal(variable)
-                            * self.__integrators[ensemble_member][variable]
+                            self.__integrators[ensemble_member][variable]
                             for variable in integrated_variable_names
                         ],
                         interpolated_states[
@@ -1829,9 +1748,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     in_canonical, in_sign = self.alias_relation.canonical_signed(in_variable_name)
                     in_times = self.times(in_canonical)
                     in_nominal = self.variable_nominal(in_canonical)
-                    in_values = in_nominal * self.state_vector(
-                        in_canonical, ensemble_member=ensemble_member
-                    )
+                    in_values = self.__scaled_state_vector(in_canonical, ensemble_member)
                     if in_sign < 0:
                         in_values *= in_sign
 
@@ -2076,6 +1993,86 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         self.__debug_check_transcribe_linear_coefficients(discrete, lbx, ubx, lbg, ubg, x0, nlp)
 
         return discrete, lbx, ubx, lbg, ubg, x0, nlp
+
+    def __interpolated_states_matrix(
+        self,
+        ensemble_member,
+        collocated_variable_names,
+        collocation_times,
+    ):
+        """
+        Returns the matrix A for which A @ scaled X, reshaped column-major, gives the interpolated
+        states at the start and at the end of each collocation interval.
+        """
+        n_collocation_times = len(collocation_times)
+
+        # Most variables have collocation times equal to the global
+        # collocation times. Use a vectorized approach to process them.
+        interpolated_states_explicit = []
+        interpolated_states_implicit = []
+
+        place_holder = [-1] * n_collocation_times
+        for variable in collocated_variable_names:
+            var_inds = self.__indices_as_lists[ensemble_member][variable]
+
+            # If the variable times != collocation times, what we do here is just a placeholder
+            if len(var_inds) != n_collocation_times:
+                var_inds = var_inds.copy()
+                var_inds.extend(place_holder)
+                var_inds = var_inds[:n_collocation_times]
+
+            interpolated_states_explicit.extend(var_inds[:-1])
+            interpolated_states_implicit.extend(var_inds[1:])
+
+        n_intervals = n_collocation_times - 1
+        n_columns = 2 * len(collocated_variable_names)
+
+        on_collocation_times = np.ones((n_columns, n_intervals), dtype=bool)
+        interpolated_rows = []
+        interpolated_cols = []
+        interpolated_values = []
+
+        # Handle variables that have different collocation times.
+        for j, variable in enumerate(collocated_variable_names):
+            times = self.times(variable)
+            if n_collocation_times == len(times):
+                # Already handled
+                continue
+
+            # Interpolation is linear, so interpolating unit vectors gives its coefficients
+            interpolation_method = self.interpolation_method(variable)
+            weights = interpolate(
+                times, ca.DM.eye(len(times)), collocation_times, False, interpolation_method
+            )
+
+            weights_rows, weights_cols = weights.sparsity().get_triplet()
+            weights_rows = np.array(weights_rows, dtype=int)
+            weights_cols = np.array(self.__indices_as_lists[ensemble_member][variable])[
+                weights_cols
+            ]
+            weights_values = np.array(weights.nonzeros())
+            explicit = weights_rows < n_intervals
+            implicit = weights_rows > 0
+
+            implicit_column = len(collocated_variable_names) + j
+            on_collocation_times[[j, implicit_column]] = False
+            interpolated_rows += [
+                j * n_intervals + weights_rows[explicit],
+                implicit_column * n_intervals + weights_rows[implicit] - 1,
+            ]
+            interpolated_cols += [weights_cols[explicit], weights_cols[implicit]]
+            interpolated_values += [weights_values[explicit], weights_values[implicit]]
+
+        rows = np.flatnonzero(on_collocation_times)
+        cols = np.array(interpolated_states_explicit + interpolated_states_implicit)[rows]
+        values = np.ones(len(rows))
+        return ca.DM.triplet(
+            np.concatenate((rows, *interpolated_rows)).tolist(),
+            np.concatenate((cols, *interpolated_cols)).tolist(),
+            ca.DM(np.concatenate((values, *interpolated_values))),
+            n_columns * n_intervals,
+            self.solver_input.size1(),
+        )
 
     def clear_transcription_cache(self):
         """
@@ -2554,8 +2551,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 inds = indices[variable]
                 initial_value = X[inds]
                 n = self.__integrators[ensemble_member][variable].size1()
-                results[variable] = self.variable_nominal(variable) * np.concatenate(
-                    [[initial_value], np.array(integrators_output[j : j + n, :]).ravel()]
+                results[variable] = np.concatenate(
+                    [
+                        [self.variable_nominal(variable) * initial_value],
+                        np.array(integrators_output[j : j + n, :]).ravel(),
+                    ]
                 )
                 j += n
 
@@ -2640,19 +2640,22 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 pass
             else:
                 times = self.times(canonical)
+                nominal = self.variable_nominal(canonical)
+                if scaled:
+                    variable_values = X[inds]
+                else:
+                    variable_values = self.__scaled_state_vector(canonical, ensemble_member)
 
                 if self.integrate_states:
-                    nominal = 1
                     if t == self.initial_time:
-                        sym = sign * X[inds]
+                        sym = sign * variable_values
                         found = True
                     else:
-                        variable_values = ca.horzcat(
-                            sign * X[inds], self.__integrators[ensemble_member][canonical]
-                        ).T
-                else:
-                    nominal = self.variable_nominal(canonical)
-                    variable_values = X[inds]
+                        # The integrator outputs are physical
+                        integrated_values = self.__integrators[ensemble_member][canonical]
+                        if scaled:
+                            integrated_values = integrated_values / nominal
+                        variable_values = ca.horzcat(variable_values, integrated_values).T
 
                 if not found:
                     f_left, f_right = np.nan, np.nan
@@ -2662,7 +2665,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             history_timeseries = history[canonical]
                         except KeyError:
                             if extrapolate:
-                                sym = variable_values[0]
+                                sym = self.__scaled_state_vector(canonical, ensemble_member)[0]
                             else:
                                 sym = np.nan
                         else:
@@ -2689,8 +2692,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
                         interpolation_method = self.interpolation_method(canonical)
                         sym = interpolate(times, variable_values, [t], False, interpolation_method)
-                        if not scaled and nominal != 1:
-                            sym *= nominal
                     if sign < 0:
                         sym *= -1
                     found = True
@@ -2741,9 +2742,18 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         except KeyError:
             return super().variable_nominal(variable)
 
+    def __scaled_state_vector(self, variable, ensemble_member):
+        key = (ensemble_member, variable)
+        try:
+            return self.__scaled_state_vector_cache[key]
+        except KeyError:
+            indices = self.__indices[ensemble_member][variable]
+            symbols = self.__scaled_solver_input[indices]
+            self.__scaled_state_vector_cache[key] = symbols
+            return symbols
+
     def extra_variable(self, extra_variable, ensemble_member=0):
-        indices = self.__indices[ensemble_member][extra_variable]
-        return self.solver_input[indices] * self.variable_nominal(extra_variable)
+        return self.__scaled_state_vector(extra_variable, ensemble_member)
 
     def __states_times_in(self, variable, t0=None, tf=None, ensemble_member=0):
         # Time stamps for this variable
@@ -2757,11 +2767,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Find canonical variable
         canonical, sign = self.alias_relation.canonical_signed(variable)
-        nominal = self.variable_nominal(canonical)
-        state = self.state_vector(canonical, ensemble_member)
+        state = self.__scaled_state_vector(canonical, ensemble_member)
         if self.integrate_states and canonical in self.__integrators[ensemble_member]:
             state = ca.vertcat(state, ca.transpose(self.__integrators[ensemble_member][canonical]))
-        state *= nominal
         if sign < 0:
             state *= -1
 
@@ -2809,6 +2817,14 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         *,
         return_times: bool = False,
     ) -> ca.MX | tuple[ca.DM, ca.MX]:
+        if t0 is None and tf is None and not return_times and not self.integrate_states:
+            # The whole horizon: no knots to add, so skip the interval selection
+            canonical, sign = self.alias_relation.canonical_signed(variable)
+            state = self.__scaled_state_vector(canonical, ensemble_member)
+            if sign < 0:
+                state *= -1
+            return state
+
         x, t = self.__states_times_in(variable, t0, tf, ensemble_member)
 
         if return_times:
@@ -2844,8 +2860,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         # Special case t being t0 for differentiated states
         if t == self.initial_time:
             # We have a special symbol for t0 derivatives
-            X = self.solver_input
-
             canonical, sign = self.alias_relation.canonical_signed(variable)
             try:
                 i = self.__differentiated_states_map[canonical]
@@ -2854,10 +2868,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 pass
             else:
                 initial_der_name = self.__initial_derivative_names[i]
-                nominal = self.variable_nominal(initial_der_name)
-                idx = self.__indices[ensemble_member][initial_der_name]
-
-                return nominal * sign * X[idx]
+                return sign * self.__scaled_state_vector(initial_der_name, ensemble_member)
 
         # Time stamps for this variable
         times = self.times(variable)
