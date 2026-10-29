@@ -840,6 +840,19 @@ class TestLPRoundTrip(unittest.TestCase):
         self.assertEqual(status, "Optimal")
         self.assertEqual(objective, -100.0)
 
+    def test_renamed_variable_names_are_read_by_highs(self):
+        names = _sanitize_var_names([{"max": [0], "e": [1], "inflow": [2], "__zero": [3]}], 4)
+        X = ca.SX.sym("X", 4)
+        constraints = _build_constraints(X, X, [1.0] * 4, [np.inf] * 4, names)
+        bounds, _, _ = _build_bounds(names, [0.0] * 4, [10.0] * 4, [False] * 4)
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file(
+                "t.lp", "  " + " + ".join(names), constraints, bounds, [], [], output_folder
+            )
+            status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(status, "Optimal")
+        self.assertEqual(objective, 4.0)
+
     def test_control_tree(self):
         self.assert_round_trip(HiGHSControlTreeModel)
 
