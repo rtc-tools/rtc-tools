@@ -24,6 +24,10 @@ from rtctools.optimization.collocated_integrated_optimization_problem import (
 )
 from rtctools.optimization.control_tree_mixin import ControlTreeMixin
 from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
+from rtctools.optimization.min_abs_goal_programming_mixin import (
+    MinAbsGoal,
+    MinAbsGoalProgrammingMixin,
+)
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 from rtctools.optimization.optimization_problem import OptimizationProblem
 from rtctools.optimization.timeseries import Timeseries
@@ -656,6 +660,19 @@ class TestExportLP(unittest.TestCase):
         self.assertRegex(bounds_section, r"x__t\d+__m0")
         self.assertRegex(bounds_section, r"x__t\d+__m1")
 
+    def test_lp_export_labels_rows(self):
+        class Model(LinearModel):
+            track_constraint_names = True
+
+        (content,) = _exported_lp_files(Model)
+        self.assertRegex(content, r"(?m)^  initial_residual_0: ")
+        collocation_rows = re.findall(r"(?m)^  collocation_eq\d+__t(\d+): (.*)$", content)
+        self.assertTrue(collocation_rows)
+        for t, row in collocation_rows:
+            # A collocation row couples the states at its time index and the one before
+            times = set(re.findall(r"__t(\d+)\b", row))
+            self.assertLessEqual(times, {t, str(int(t) - 1)}, row)
+
     def test_lp_export_rejects_invalid_problems(self):
         """Export must raise ValueError for non-affine or unsupported problems.
 
@@ -756,6 +773,10 @@ class HiGHSLinearModel(_HiGHSMixin, LinearModel):
     pass
 
 
+class HiGHSLabelledLinearModel(HiGHSLinearModel):
+    track_constraint_names = True
+
+
 class _XAtHalfGoal(Goal):
     def function(self, optimization_problem, ensemble_member):
         return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
@@ -792,6 +813,41 @@ class HiGHSControlTreeModel(ControlTreeMixin, HiGHSLinearModel):
     def constant_inputs(self, ensemble_member):
         values = np.linspace(1.0 - 0.1 * ensemble_member, 0.5 + 0.1 * ensemble_member, 9)
         return {"constant_input": Timeseries(self.times(), values)}
+
+
+class _GoalNamesMixin:
+    named_constraints = True
+    track_constraint_names = True
+
+    def goal_programming_options(self):
+        options = super().goal_programming_options()
+        options["constraint_names"] = True
+        return options
+
+
+class HiGHSNamedGoalsModel(_GoalNamesMixin, HiGHSGoalProgrammingModel):
+    def goal_programming_options(self):
+        options = super().goal_programming_options()
+        options["keep_soft_constraints"] = True  # adds a pareto row per earlier priority
+        return options
+
+
+class _XAtHalfAbsGoal(MinAbsGoal):
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+
+    function_nominal = 1.0
+    priority = 1
+
+
+class HiGHSNamedMinAbsModel(
+    _GoalNamesMixin, _HiGHSMixin, MinAbsGoalProgrammingMixin, GoalProgrammingMixin, _BaseTestModel
+):
+    def min_abs_goals(self):
+        return [_XAtHalfAbsGoal()]
+
+    def goals(self):
+        return [*super().goals(), _XAtHalfMinGoal()]  # priority 2 keeps the MinAbsGoal as a row
 
 
 def _exported_lp_files(model_class):
@@ -869,3 +925,44 @@ class TestLPRoundTrip(unittest.TestCase):
                 _write_lp_file("t.lp", "  x0", constraints, bounds, [], [], output_folder)
                 status, _ = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
                 self.assertEqual(status, "Infeasible")
+
+    def test_labelled_linear_model(self):
+        self.assert_round_trip(HiGHSLabelledLinearModel)
+
+    def test_row_labels_are_read_back(self):
+        X = ca.SX.sym("X", 1)
+        g = ca.vertcat(*[k * X[0] for k in range(1, 6)])
+        names = ["eq", "range", "\\a b<=c", ".1st", "range__lb"]
+        constraints = _build_constraints(
+            g, X, [1.0, 0.0, 0.0, 0.0, 0.0], [1.0, 2.0, np.inf, np.inf, np.inf], ["x0"], names
+        )
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file("t.lp", "  x0", constraints, "  0 <= x0 <= 10", [], [], output_folder)
+            h = highspy.Highs()
+            h.setOptionValue("output_flag", False)
+            h.readModel(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(
+            list(h.getLp().row_names_),
+            ["eq", "range__lb__d0", "range__ub", "_a_b__c", "_.1st", "range__lb__d1"],
+        )
+
+
+class TestGoalConstraintNames(unittest.TestCase):
+    def test_goal_and_pareto_rows_are_named(self):
+        _, priority_2 = _exported_lp_files(HiGHSNamedGoalsModel)
+        self.assertRegex(priority_2, r"(?m)^  _XAtHalfMaxGoal_p1: ")
+        self.assertRegex(priority_2, r"(?m)^  _XAtHalfMinGoal_p2: ")
+        self.assertRegex(priority_2, r"(?m)^  pareto_p1: ")
+
+    def test_min_abs_rows_are_named(self):
+        _, priority_2 = _exported_lp_files(HiGHSNamedMinAbsModel)
+        self.assertRegex(priority_2, r"(?m)^  _XAtHalfAbsGoal_p1_abs_pos: ")
+        self.assertRegex(priority_2, r"(?m)^  _XAtHalfAbsGoal_p1_abs_neg: ")
+        self.assertRegex(priority_2, r"(?m)^  _XAtHalfAbsGoal_p1: ")
+
+    def test_goal_names_require_named_constraints(self):
+        class Model(HiGHSNamedGoalsModel):
+            named_constraints = False
+
+        with self.assertRaisesRegex(ValueError, "requires named_constraints = True"):
+            _exported_lp_files(Model)
