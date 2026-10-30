@@ -26,6 +26,9 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
     Adds lexicographic goal programming to your optimization problem.
     """
 
+    # HomotopyMixin checks this marker to verify that intermediate pruning takes effect.
+    _supports_homotopy_pruning = True
+
     def __init__(self, **kwargs):
         # Call parent class first for default behaviour.
         super().__init__(**kwargs)
@@ -624,17 +627,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         # will have been discretized, mapped and stored.
         self.__problem_constraints[-1].append(constraint)
 
-    def optimize(self, preprocessing=True, postprocessing=True, log_solver_failure_as_error=True):
-        # Do pre-processing
-        if preprocessing:
-            self.pre()
-
-        # Group goals into subproblems
+    def _gp_group_subproblems(self, options):
         subproblems = []
         goals = self.goals()
         path_goals = self.path_goals()
-
-        options = self.goal_programming_options()
 
         # Validate (in)compatible options
         if options["keep_soft_constraints"] and options["violation_relaxation"]:
@@ -667,6 +663,16 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
                     ],
                 )
             )
+
+        return subproblems
+
+    def optimize(self, preprocessing=True, postprocessing=True, log_solver_failure_as_error=True):
+        # Do pre-processing
+        if preprocessing:
+            self.pre()
+
+        options = self.goal_programming_options()
+        subproblems = self._gp_group_subproblems(options)
 
         # Solve the subproblems one by one
         logger.info("Starting goal programming")
@@ -749,6 +755,13 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             # Call the post priority hook, so that intermediate results can be
             # logged/inspected.
             self.priority_completed(priority)
+
+            if getattr(self, "_gp_prune_subproblems", False):
+                logger.info(
+                    "Intermediate homotopy step: pruning remaining subproblems "
+                    "after first solved priority."
+                )
+                break
 
             if options["keep_soft_constraints"]:
                 self.__add_subproblem_objective_constraint()
