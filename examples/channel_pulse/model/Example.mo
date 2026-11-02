@@ -27,7 +27,7 @@ model Example
   input Real Inflow_Q(fixed=true) = Discharge.Q;
   input Real Level_H(fixed=true) = Level.H;
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
-  parameter Real step_size;
+  parameter Real step_size(start = 0.0); // Value set in parameters()
   // Output Channel states
   output Real Channel_Q_up = Discharge.Q;
   output Real Channel_Q_dn = Level.HQ.Q;
