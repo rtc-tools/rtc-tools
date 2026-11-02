@@ -7,14 +7,18 @@ model Example
   Deltares.ChannelFlow.Hydraulic.Structures.Pump orifice annotation(Placement(visible = true, transformation(origin = {0, 20}, extent = {{10, -10}, {-10, 10}}, rotation = 0)));
 
   // Define Input/Output Variables and set them equal to model variables
-  input Modelica.Units.SI.VolumeFlowRate Q_pump(fixed=false, min=0.0, max=7.0) = pump.Q;
+  input Modelica.Units.SI.VolumeFlowRate Q_pump(fixed=false, min=0.0, max=7.0);
   input Boolean is_downhill;
-  input Modelica.Units.SI.VolumeFlowRate Q_in(fixed=true) = discharge.Q;
-  input Modelica.Units.SI.Position H_sea(fixed=true) = level.H;
-  input Modelica.Units.SI.VolumeFlowRate Q_orifice(fixed=false, min=0.0, max=10.0) = orifice.Q;
+  input Modelica.Units.SI.VolumeFlowRate Q_in(fixed=true);
+  input Modelica.Units.SI.Position H_sea(fixed=true);
+  input Modelica.Units.SI.VolumeFlowRate Q_orifice(fixed=false, min=0.0, max=10.0);
   output Modelica.Units.SI.Position storage_level = storage.HQ.H;
   output Modelica.Units.SI.Position sea_level = level.H;
 equation
+  Q_pump = pump.Q;
+  Q_in = discharge.Q;
+  H_sea = level.H;
+  Q_orifice = orifice.Q;
   // Connect Model Elements
   connect(orifice.HQDown, level.HQ) annotation(Line(visible = true, origin = {-33.025, 10}, points = {{25.025, 10}, {-6.675, 10}, {-6.675, -10}, {-11.675, -10}}, color = {0, 0, 255}));
   connect(storage.HQ, orifice.HQUp) annotation(Line(visible = true, origin = {43.737, 48.702}, points = {{-3.715, -48.702}, {-3.737, -28.702}, {-35.737, -28.702}}, color = {0, 0, 255}));
