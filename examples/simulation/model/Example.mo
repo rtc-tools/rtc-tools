@@ -4,7 +4,7 @@ model Example
   Deltares.ChannelFlow.SimpleRouting.Storage.Storage storage(Q_release = P_control, V(start=storage_V_init, fixed=true, nominal=4e5)) annotation(Placement(visible = true, transformation(origin = {0, 0}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   Deltares.ChannelFlow.SimpleRouting.BoundaryConditions.Terminal outfall annotation(Placement(visible = true, transformation(origin = {55, 0}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   // Initial States
-  parameter Modelica.Units.SI.Volume storage_V_init;
+  parameter Modelica.Units.SI.Volume storage_V_init(start = 0.0); // Value set in parameters.csv
   // Inputs
   input Modelica.Units.SI.VolumeFlowRate P_control(fixed = true);
   input Modelica.Units.SI.VolumeFlowRate Q_in(fixed = true);
