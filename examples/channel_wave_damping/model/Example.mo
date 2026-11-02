@@ -55,7 +55,7 @@ model Example
 
   // Parameters
   parameter Modelica.Units.SI.Duration step_size;
-  parameter Real theta;
+  parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
 equation
   connect(dam_middle.HQDown, downstream.HQUp) annotation(Line(points = {{38, 0}, {50, 0}}, color = {0, 0, 255}));
   connect(dam_middle.HQUp, middle.HQDown) annotation(Line(points = {{8, 0}, {22, 0}, {22, 0}, {22, 0}}, color = {0, 0, 255}));
