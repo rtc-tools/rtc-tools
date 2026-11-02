@@ -54,7 +54,7 @@ model Example
   output Modelica.Units.SI.VolumeFlowRate Q_in = Inflow_Q;
 
   // Parameters
-  parameter Modelica.Units.SI.Duration step_size;
+  parameter Modelica.Units.SI.Duration step_size(start = 0.0); // Value set in parameters()
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
 equation
   connect(dam_middle.HQDown, downstream.HQUp) annotation(Line(points = {{38, 0}, {50, 0}}, color = {0, 0, 255}));

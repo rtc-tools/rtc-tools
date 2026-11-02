@@ -10,7 +10,7 @@ model Example
   input Modelica.Units.SI.Stress reach_1_stress_u(fixed = true);
   input Modelica.Units.SI.Stress reach_1_stress_v(fixed = true);
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
-  parameter Real step_size;
+  parameter Real step_size(start = 0.0); // Value set in parameters()
   // Output Channel states
   output Real QChannel_Q_up = Inflow.Q;
   output Real QChannel_Q_dn = Outflow.Q;

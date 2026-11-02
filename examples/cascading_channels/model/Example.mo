@@ -47,7 +47,7 @@ model Example
   Deltares.ChannelFlow.Hydraulic.Structures.Pump UpperControlStructure annotation(Placement(visible = true, transformation(origin = {-32, 26}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   // Parameters
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
-  parameter Real step_size;
+  parameter Real step_size(start = 0.0); // Value set in parameters()
   // Inputs
   input Real Inflow_Q(fixed = true) = Inflow.Q;
   input Real UpperControlStructure_Q(fixed = false, min = 0., max = 4.) = UpperControlStructure.Q;
