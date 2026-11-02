@@ -1,5 +1,5 @@
 model Example
-  parameter Integer delay_hours = 24.0;
+  parameter Integer delay_hours = 24;
   Deltares.ChannelFlow.SimpleRouting.BoundaryConditions.Inflow control_inflow annotation(
     Placement(visible = true, transformation(origin = {-80, 0}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   Deltares.ChannelFlow.SimpleRouting.BoundaryConditions.Inflow external_inflow annotation(
