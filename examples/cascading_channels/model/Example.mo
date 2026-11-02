@@ -49,16 +49,20 @@ model Example
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
   parameter Real step_size(start = 0.0); // Value set in parameters()
   // Inputs
-  input Real Inflow_Q(fixed = true) = Inflow.Q;
-  input Real UpperControlStructure_Q(fixed = false, min = 0., max = 4.) = UpperControlStructure.Q;
-  input Real LowerControlStructure_Q(fixed = false, min = 0., max = 4.) = LowerControlStructure.Q;
-  input Real DrinkingWaterExtractionPump_Q(fixed = false, min = 0., max = 2.) = DrinkingWaterExtractionPump.Q;
+  input Real Inflow_Q(fixed = true);
+  input Real UpperControlStructure_Q(fixed = false, min = 0., max = 4.);
+  input Real LowerControlStructure_Q(fixed = false, min = 0., max = 4.);
+  input Real DrinkingWaterExtractionPump_Q(fixed = false, min = 0., max = 2.);
 initial equation
   // Steady state initialization
   der(LowerChannel.Q) = fill(0.0, LowerChannel.n_level_nodes + 1);
   der(MiddleChannel.Q) = fill(0.0, MiddleChannel.n_level_nodes + 1);
   der(UpperChannel.Q) = fill(0.0, UpperChannel.n_level_nodes + 1);
 equation
+  Inflow_Q = Inflow.Q;
+  UpperControlStructure_Q = UpperControlStructure.Q;
+  LowerControlStructure_Q = LowerControlStructure.Q;
+  DrinkingWaterExtractionPump_Q = DrinkingWaterExtractionPump.Q;
   connect(DrinkingWaterExtractionPump.HQDown, DrinkingWaterPlant.HQ) annotation(Line(points = {{20, 26}, {38, 26}, {38, 36}, {38, 36}}, color = {0, 0, 255}));
   connect(Inflow.HQ, UpperChannel.HQUp) annotation(Line(points = {{-88, 26}, {-70, 26}, {-70, 26}, {-70, 26}}, color = {0, 0, 255}));
   connect(LowerChannel.HQDown, Level.HQ) annotation(Line(points = {{50, -24}, {66, -24}}, color = {0, 0, 255}));

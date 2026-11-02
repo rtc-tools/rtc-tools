@@ -5,8 +5,8 @@ model Example
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Discharge Inflow annotation(
     Placement(visible = true, transformation(origin = {-60, 8}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   // Inputs
-  input Real Inflow_Q(fixed = true) = Inflow.Q;
-  input Real Outflow_Q(fixed = true) = Outflow.Q;
+  input Real Inflow_Q(fixed = true);
+  input Real Outflow_Q(fixed = true);
   input Modelica.Units.SI.Stress reach_1_stress_u(fixed = true);
   input Modelica.Units.SI.Stress reach_1_stress_v(fixed = true);
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
@@ -47,6 +47,8 @@ model Example
   Deltares.ChannelFlow.Hydraulic.Branches.HomotopicLinear Channel(H_b_down = 0, H_b_up = 0.2, Q_nominal = 100, friction_coefficient = 0.02, length = 10000, n_level_nodes = 2, theta = theta, uniform_nominal_depth = 3.154, use_inertia = true, use_manning = true, use_upwind = false, width_down = 100, width_up = 100, rotation_deg = 0.0, wind_stress_u = reach_1_stress_u, wind_stress_v = reach_1_stress_v)  annotation(
     Placement(visible = true, transformation(origin = {0, 0}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
 equation
+  Inflow_Q = Inflow.Q;
+  Outflow_Q = Outflow.Q;
   connect(Channel.HQDown, Outflow.HQ) annotation(
     Line(points = {{8, 0}, {60, 0}}, color = {0, 0, 255}));
   connect(Inflow.HQ, Channel.HQUp) annotation(
