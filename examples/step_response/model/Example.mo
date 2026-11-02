@@ -7,8 +7,8 @@ model Example
   // Inputs
   input Real Inflow_Q(fixed = true) = Inflow.Q;
   input Real Outflow_Q(fixed = true) = Outflow.Q;
-  input SI.Stress reach_1_stress_u(fixed = true);
-  input SI.Stress reach_1_stress_v(fixed = true);
+  input Modelica.Units.SI.Stress reach_1_stress_u(fixed = true);
+  input Modelica.Units.SI.Stress reach_1_stress_v(fixed = true);
   parameter Real theta;
   parameter Real step_size;
   // Output Channel states
