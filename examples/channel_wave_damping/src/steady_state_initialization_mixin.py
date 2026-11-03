@@ -1,3 +1,5 @@
+import casadi as ca
+
 from rtctools.optimization.optimization_problem import OptimizationProblem
 
 
@@ -10,5 +12,8 @@ class SteadyStateInitializationMixin(OptimizationProblem):
         for reach in ["upstream", "middle", "downstream"]:
             for i in range(int(parameters[f"{reach}.n_level_nodes"]) + 1):
                 state = f"{reach}.Q[{i + 1}]"
-                c.append((self.der_at(state, times[0]), 0, 0))
+                der = self.der_at(state, times[0])
+                # A flow that follows from input data has nothing left to constrain
+                if isinstance(der, ca.MX):
+                    c.append((der, 0, 0))
         return c
