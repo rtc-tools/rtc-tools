@@ -37,5 +37,5 @@ equation
   connect(Channel.HQDown, Level.HQ) annotation(Line(points = {{8, 0}, {60, 0}, {60, 0}, {60, 0}}, color = {0, 0, 255}));
   connect(Discharge.HQ, Channel.HQUp) annotation(Line(points = {{-60, 0}, {-8, 0}, {-8, 0}, {-8, 0}}, color = {0, 0, 255}));
 initial equation
-  Channel.Q = fill(Inflow_Q, Channel.n_level_nodes + 1);
+  Channel.Q[2:Channel.n_level_nodes] = fill(Inflow_Q, Channel.n_level_nodes - 1);
 end Example;
