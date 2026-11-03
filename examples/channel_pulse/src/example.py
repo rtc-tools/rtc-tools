@@ -28,11 +28,17 @@ class Example(HomotopyMixin, CSVMixin, ModelicaMixin, CollocatedIntegratedOptimi
         n_level_nodes = int(parameters["Channel.n_level_nodes"])
 
         # To Mimic HEC-RAS behaviour, enforce steady state both at t0 and at t1.
-        for i in range(n_level_nodes):
+        # The last level node follows the downstream level boundary at every time, so
+        # steady state there is set through the downstream flow instead.
+        for i in range(n_level_nodes - 1):
             state = f"Channel.H[{i + 1}]"
             constraints.append(
                 (self.state_at(state, times[0]) - self.state_at(state, times[1]), 0, 0)
             )
+        q_down = f"Channel.Q[{n_level_nodes + 1}]"
+        constraints.append(
+            (self.state_at(q_down, times[0]) - self.state_at("Inflow_Q", times[0]), 0, 0)
+        )
         return constraints
 
 
