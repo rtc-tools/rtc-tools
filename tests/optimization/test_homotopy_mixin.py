@@ -80,3 +80,13 @@ class TestHomotopyMixin(TestCase):
     def test_failure_halves_the_shortened_step(self):
         thetas = self.solved_thetas(failing_solve=3, delta_theta_0=0.8)
         np.testing.assert_allclose(thetas, [0.0, 0.8, 1.0, 0.9, 1.0])
+
+    def test_invalid_options(self):
+        for options in [
+            {"theta_start": 1.5},
+            {"delta_theta_0": 0.0},
+            {"delta_theta_min": 0.0},
+            {"homotopy_parameter": "unknown"},
+        ]:
+            with self.subTest(**options), self.assertRaises(ValueError):
+                HomotopyModel(**options).optimize()
