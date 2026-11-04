@@ -33,6 +33,8 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         # Initialize instance variables, so that the overridden methods may be
         # called outside of the goal programming loop, for example in pre().
         self._gp_first_run = True
+        # If True, stop after the first solved priority (e.g. at intermediate HomotopyMixin steps).
+        self._gp_skip_later_priorities = False
         self.__results_are_current = False
         self.__subproblem_epsilons = []
         self.__subproblem_objectives = []
@@ -749,6 +751,10 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             # Call the post priority hook, so that intermediate results can be
             # logged/inspected.
             self.priority_completed(priority)
+
+            if self._gp_skip_later_priorities:
+                logger.info(f"Skipping the priorities after priority {priority}.")
+                break
 
             if options["keep_soft_constraints"]:
                 self.__add_subproblem_objective_constraint()
