@@ -61,7 +61,7 @@ In addition to elements, the input variables ``Inflow_Q``, ``PumpFlow``, ``Turbi
 we want to view the power output and costs in the output file, we also define output
 variables ``PumpPower``, ``TurbinePower``, ``V_LowerBasin``,``V_UpperBasin``, ``ReservoirPower``, 
 ``TotalSystemPower``,``TotalGeneratingPower``, ``SystemGeneratingRevenue``, ``TotalSystemRevenue``, 
-``TotalSystemRevenueSum``, ``PumpCost``.
+``PumpCost``.
 
 To maintain represent the behaviour of a reversible PHS pump/turbine unit, we input the Boolean 
 ``Turbine_is_on`` as a way to ensure the PHS unit cannot be pumping and generating at the same time. 
