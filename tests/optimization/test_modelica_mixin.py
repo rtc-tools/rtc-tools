@@ -192,6 +192,14 @@ class ModelEnsemble(Model):
             return {"constant_input": Timeseries(self.times(), np.linspace(1.0, 0.5, 21))}
 
 
+class ModelEnsembleMissingExtraConstantInput(ModelEnsemble):
+    def constant_inputs(self, ensemble_member):
+        constant_inputs = super().constant_inputs(ensemble_member)
+        if ensemble_member == 0:
+            constant_inputs["extra_input"] = Timeseries(self.times(), np.zeros(21))
+        return constant_inputs
+
+
 class ModelAlgebraic(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
     def __init__(self):
         super().__init__(
@@ -601,6 +609,12 @@ class TestModelicaMixinEnsemble(TestCase):
     def test_objective_value(self):
         objective_value_tol = 1e-6
         self.assertAlmostLessThan(abs(self.problem.objective_value), 0.0, objective_value_tol)
+
+
+class TestModelicaMixinEnsembleMissingExtraConstantInput(TestCase):
+    def test_optimize_raises(self):
+        with self.assertRaisesRegex(Exception, "No values found for constant input extra_input"):
+            ModelEnsembleMissingExtraConstantInput().optimize()
 
 
 class TestModelicaMixinAlgebraic(TestCase):
