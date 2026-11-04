@@ -1,6 +1,7 @@
 import logging
 import math
 
+from .goal_programming_mixin import GoalProgrammingMixin
 from .optimization_problem import OptimizationProblem
 from .timeseries import Timeseries
 
@@ -60,21 +61,23 @@ class HomotopyMixin(OptimizationProblem):
 
         return parameters
 
-    def homotopy_options(self) -> dict[str, str | float]:
+    def homotopy_options(self) -> dict[str, str | float | bool]:
         """
         Returns a dictionary of options controlling the homotopy process.
 
-        +------------------------+------------+---------------+
-        | Option                 | Type       | Default value |
-        +========================+============+===============+
-        | ``theta_start``        | ``float``  | ``0.0``       |
-        +------------------------+------------+---------------+
-        | ``delta_theta_0``      | ``float``  | ``1.0``       |
-        +------------------------+------------+---------------+
-        | ``delta_theta_min``    | ``float``  | ``0.01``      |
-        +------------------------+------------+---------------+
-        | ``homotopy_parameter`` | ``string`` | ``theta``     |
-        +------------------------+------------+---------------+
+        +----------------------------------+------------+---------------+
+        | Option                           | Type       | Default value |
+        +==================================+============+===============+
+        | ``theta_start``                  | ``float``  | ``0.0``       |
+        +----------------------------------+------------+---------------+
+        | ``delta_theta_0``                | ``float``  | ``1.0``       |
+        +----------------------------------+------------+---------------+
+        | ``delta_theta_min``              | ``float``  | ``0.01``      |
+        +----------------------------------+------------+---------------+
+        | ``homotopy_parameter``           | ``string`` | ``theta``     |
+        +----------------------------------+------------+---------------+
+        | ``skip_intermediate_priorities`` | ``bool``   | ``False``     |
+        +----------------------------------+------------+---------------+
 
         The homotopy process is controlled by the homotopy parameter in the model, specified by the
         option ``homotopy_parameter``.  The homotopy parameter is initialized to ``theta_start``,
@@ -89,6 +92,11 @@ class HomotopyMixin(OptimizationProblem):
         ``homotopy_parameter`` must name a parameter or a fixed input of the model. Otherwise,
         :py:meth:`optimize` raises a ``ValueError``.
 
+        If ``skip_intermediate_priorities`` is ``True``, goal programming solves only its first
+        priority at the intermediate steps (:math:`\\theta < 1.0`), and all priorities at
+        :math:`\\theta = 1.0`. This requires ``GoalProgrammingMixin`` to follow
+        ``HomotopyMixin`` in the inheritance order.
+
         :returns: A dictionary of homotopy options.
         """
 
@@ -97,6 +105,7 @@ class HomotopyMixin(OptimizationProblem):
             "delta_theta_0": 1.0,
             "delta_theta_min": 0.01,
             "homotopy_parameter": "theta",
+            "skip_intermediate_priorities": False,
         }
 
     def dynamic_parameters(self):
@@ -123,12 +132,22 @@ class HomotopyMixin(OptimizationProblem):
                 f"Homotopy parameter '{name}' is not a parameter or fixed input of the model."
             )
 
+        mro = type(self).__mro__
+        if options["skip_intermediate_priorities"] and (
+            GoalProgrammingMixin not in mro[mro.index(HomotopyMixin) :]
+        ):
+            raise ValueError(
+                "skip_intermediate_priorities requires GoalProgrammingMixin "
+                "to follow HomotopyMixin in the inheritance order."
+            )
+
     def optimize(self, preprocessing=True, postprocessing=True, log_solver_failure_as_error=True):
         # Pre-processing
         if preprocessing:
             self.pre()
 
-        options = self.homotopy_options()
+        # Overrides of homotopy_options() need not return the optional keys.
+        options = {**HomotopyMixin.homotopy_options(self), **self.homotopy_options()}
         self.__check_options(options)
         delta_theta = options["delta_theta_0"]
 
@@ -138,6 +157,9 @@ class HomotopyMixin(OptimizationProblem):
         while self.__theta <= 1.0:
             logger.info(f"Solving with homotopy parameter theta = {self.__theta}.")
 
+            self._gp_skip_later_priorities = (
+                options["skip_intermediate_priorities"] and self.__theta < 1.0
+            )
             success = super().optimize(
                 preprocessing=False, postprocessing=False, log_solver_failure_as_error=False
             )

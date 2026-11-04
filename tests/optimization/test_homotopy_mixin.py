@@ -5,6 +5,7 @@ import numpy as np
 from rtctools.optimization.collocated_integrated_optimization_problem import (
     CollocatedIntegratedOptimizationProblem,
 )
+from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
 from rtctools.optimization.homotopy_mixin import HomotopyMixin
 from rtctools.optimization.modelica_mixin import ModelicaMixin
 
@@ -40,6 +41,44 @@ class HomotopyModel(
 ):
     def objective(self, ensemble_member):
         return self.integral("x", ensemble_member=ensemble_member)
+
+
+class StateAtGoal(Goal):
+    function_range = (-10.0, 10.0)
+    target_min = 0.0
+
+    def __init__(self, t, priority):
+        self.t = t
+        self.priority = priority
+
+    def function(self, optimization_problem, ensemble_member):
+        return optimization_problem.state_at("x", self.t, ensemble_member)
+
+
+class HomotopyGPModel(
+    ModelSetup,
+    HomotopyMixin,
+    GoalProgrammingMixin,
+    ModelicaMixin,
+    CollocatedIntegratedOptimizationProblem,
+):
+    skip_intermediate_priority_1 = False
+
+    def __init__(self, **homotopy_options):
+        self.solved = []
+        super().__init__(delta_theta_0=0.5, **homotopy_options)
+
+    def goals(self):
+        return [StateAtGoal(0.5, priority=1), StateAtGoal(1.0, priority=2)]
+
+    def priority_started(self, priority):
+        super().priority_started(priority)
+        theta = self.parameters(0)["theta"]
+        self.skip_priority = self.skip_intermediate_priority_1 and theta < 1.0 and priority == 1
+
+    def priority_completed(self, priority):
+        super().priority_completed(priority)
+        self.solved.append((self.parameters(0)["theta"], priority))
 
 
 class TestHomotopyMixin(TestCase):
@@ -87,6 +126,19 @@ class TestHomotopyMixin(TestCase):
             {"delta_theta_0": 0.0},
             {"delta_theta_min": 0.0},
             {"homotopy_parameter": "unknown"},
+            {"skip_intermediate_priorities": True},
         ]:
             with self.subTest(**options), self.assertRaises(ValueError):
                 HomotopyModel(**options).optimize()
+
+    def test_skip_intermediate_priorities(self):
+        for skip_intermediate, skip_first, expected in [
+            (False, False, [(0.0, 1), (0.0, 2), (0.5, 1), (0.5, 2), (1.0, 1), (1.0, 2)]),
+            (True, False, [(0.0, 1), (0.5, 1), (1.0, 1), (1.0, 2)]),
+            (True, True, [(0.0, 2), (0.5, 2), (1.0, 1), (1.0, 2)]),
+        ]:
+            with self.subTest(skip_intermediate=skip_intermediate, skip_first=skip_first):
+                problem = HomotopyGPModel(skip_intermediate_priorities=skip_intermediate)
+                problem.skip_intermediate_priority_1 = skip_first
+                self.assertTrue(problem.optimize())
+                self.assertEqual(problem.solved, expected)
