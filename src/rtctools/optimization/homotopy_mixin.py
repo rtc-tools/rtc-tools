@@ -1,4 +1,5 @@
 import logging
+import math
 
 from .optimization_problem import OptimizationProblem
 from .timeseries import Timeseries
@@ -81,7 +82,8 @@ class HomotopyMixin(OptimizationProblem):
         is initialized with the value of the option ``delta_theta_0``.  If this step size is too
         large, i.e., if the problem with the increased homotopy parameter fails to converge, the
         step size is halved.  The process of halving terminates when the step size falls below the
-        minimum value specified by the option ``delta_theta_min``.
+        minimum value specified by the option ``delta_theta_min``. The last step is shortened if
+        needed, so that the problem is always solved at :math:`\\theta = 1.0`.
 
         :returns: A dictionary of homotopy options.
         """
@@ -134,14 +136,18 @@ class HomotopyMixin(OptimizationProblem):
                     # Recompute the sparsity structure for the nonlinear model family.
                     self.clear_transcription_cache()
 
+                if self.__theta == 1.0:
+                    break
+                theta_converged = self.__theta
+
             else:
                 if self.__theta == options["theta_start"]:
                     break
 
-                self.__theta -= delta_theta
-                delta_theta /= 2
+                delta_theta = (self.__theta - theta_converged) / 2
 
                 if delta_theta < options["delta_theta_min"]:
+                    self.__theta = theta_converged
                     failure_message = (
                         "Solver failed with homotopy parameter theta = {}. Theta cannot "
                         "be decreased further, as that would violate the minimum delta "
@@ -155,7 +161,10 @@ class HomotopyMixin(OptimizationProblem):
                         logger.info(failure_message)
                     break
 
-            self.__theta += delta_theta
+            self.__theta = min(theta_converged + delta_theta, 1.0)
+            # Rounding can leave the sum of the steps just below 1.0.
+            if success and math.isclose(self.__theta, 1.0):
+                self.__theta = 1.0
 
         # Post-processing
         if postprocessing:
