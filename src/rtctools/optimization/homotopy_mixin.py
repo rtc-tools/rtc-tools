@@ -85,6 +85,10 @@ class HomotopyMixin(OptimizationProblem):
         minimum value specified by the option ``delta_theta_min``. The last step is shortened if
         needed, so that the problem is always solved at :math:`\\theta = 1.0`.
 
+        ``theta_start`` must not exceed 1, both step sizes must be positive, and
+        ``homotopy_parameter`` must name a parameter or a fixed input of the model. Otherwise,
+        :py:meth:`optimize` raises a ``ValueError``.
+
         :returns: A dictionary of homotopy options.
         """
 
@@ -106,12 +110,26 @@ class HomotopyMixin(OptimizationProblem):
 
         return dynamic_parameters
 
+    def __check_options(self, options):
+        if not options["theta_start"] <= 1.0:
+            raise ValueError("theta_start must not exceed 1.")
+        if not (options["delta_theta_0"] > 0.0 and options["delta_theta_min"] > 0.0):
+            raise ValueError("delta_theta_0 and delta_theta_min must be positive.")
+        name = options["homotopy_parameter"]
+        canonical_name, _ = self.alias_relation.canonical_signed(name)
+        variables = self.dae_variables["parameters"] + self.dae_variables["constant_inputs"]
+        if canonical_name not in {v.name() for v in variables}:
+            raise ValueError(
+                f"Homotopy parameter '{name}' is not a parameter or fixed input of the model."
+            )
+
     def optimize(self, preprocessing=True, postprocessing=True, log_solver_failure_as_error=True):
         # Pre-processing
         if preprocessing:
             self.pre()
 
         options = self.homotopy_options()
+        self.__check_options(options)
         delta_theta = options["delta_theta_0"]
 
         # Homotopy loop
