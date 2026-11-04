@@ -1770,6 +1770,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 (history_times.shape[0], len(self.dae_variables["constant_inputs"]))
             )
             if history_times.shape[0] > 0:
+                raw_constant_inputs = self.constant_inputs(ensemble_member)
                 for j, var in enumerate(self.dae_variables["constant_inputs"]):
                     var_name = var.name()
                     try:
