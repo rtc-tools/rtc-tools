@@ -213,3 +213,55 @@ class TestDelayLoop(TestCase, unittest.TestCase):
         problem = ModelDelayLoopNoHistory(inline_delay_expressions=True)
         with self.assertRaisesRegex(Exception, "Circular dependency"):
             problem.optimize()
+
+
+class ModelDelayConstantInputEnsemble(ModelicaMixin, CollocatedIntegratedOptimizationProblem):
+    def __init__(self, inline_delay_expressions):
+        super().__init__(
+            input_folder=data_path(),
+            output_folder=data_path(),
+            model_name="ModelDelayConstantInput",
+            model_folder=data_path(),
+        )
+        self.inline_delay_expressions = inline_delay_expressions
+
+    @property
+    def ensemble_size(self):
+        return 2
+
+    def times(self, variable=None):
+        return np.linspace(0.0, 1.0, 21)
+
+    def constant_inputs(self, ensemble_member):
+        constant_inputs = super().constant_inputs(ensemble_member)
+        times = np.linspace(-0.1, 1.0, 23)
+        constant_inputs["u"] = Timeseries(times, (ensemble_member + 1) * (1.0 + times))
+        return constant_inputs
+
+    def history(self, ensemble_member):
+        history = super().history(ensemble_member)
+        u = self.constant_inputs(ensemble_member)["u"]
+        history["u"] = Timeseries(u.times[:3], u.values[:3])
+        return history
+
+    def compiler_options(self):
+        compiler_options = super().compiler_options()
+        compiler_options["cache"] = False
+        compiler_options["library_folders"] = []
+        return compiler_options
+
+
+class TestDelayConstantInputEnsemble(TestCase, unittest.TestCase):
+    def test_history_per_member(self):
+        times = np.linspace(0.0, 1.0, 21)
+        for inline_delay_expressions in (False, True):
+            problem = ModelDelayConstantInputEnsemble(inline_delay_expressions)
+            self.assertTrue(problem.optimize())
+            for ensemble_member in range(2):
+                with self.subTest(
+                    inline_delay_expressions=inline_delay_expressions,
+                    ensemble_member=ensemble_member,
+                ):
+                    expected = 2 * (ensemble_member + 1) * (1.0 + times - 0.1)
+                    results = problem.extract_results(ensemble_member)
+                    np.testing.assert_allclose(results["y"], expected, atol=1e-6)
