@@ -1,6 +1,8 @@
 import logging
 import math
 
+import numpy as np
+
 from .goal_programming_mixin import GoalProgrammingMixin
 from .optimization_problem import OptimizationProblem
 from .timeseries import Timeseries
@@ -23,6 +25,9 @@ class HomotopyMixin(OptimizationProblem):
         of the (potentially expensive) homotopy process.
 
     """
+
+    # The fixed input that holds a time-dependent theta, or None.
+    __theta_input = None
 
     def seed(self, ensemble_member):
         seed = super().seed(ensemble_member)
@@ -61,7 +66,28 @@ class HomotopyMixin(OptimizationProblem):
 
         return parameters
 
-    def homotopy_options(self) -> dict[str, str | float | bool]:
+    def constant_inputs(self, ensemble_member):
+        constant_inputs = super().constant_inputs(ensemble_member)
+        if self.__theta_input is None:
+            return constant_inputs
+
+        times = self.times()
+        values = np.full(len(times), self.__theta)
+        values[self.__thresh_idx :] = 0.0
+
+        # Delayed expressions also read theta at the history times.
+        history_start = min(
+            (series.times[0] for series in self.history(ensemble_member).values()),
+            default=times[0],
+        )
+        if history_start < times[0]:
+            times = np.hstack([history_start, times])
+            values = np.hstack([values[0], values])
+
+        constant_inputs[self.__theta_input] = Timeseries(times, values)
+        return constant_inputs
+
+    def homotopy_options(self) -> dict[str, str | float | bool | int | None]:
         """
         Returns a dictionary of options controlling the homotopy process.
 
@@ -77,6 +103,8 @@ class HomotopyMixin(OptimizationProblem):
         | ``homotopy_parameter``           | ``string`` | ``theta``     |
         +----------------------------------+------------+---------------+
         | ``skip_intermediate_priorities`` | ``bool``   | ``False``     |
+        +----------------------------------+------------+---------------+
+        | ``non_linear_thresh_time_idx``   | ``int``    | ``None``      |
         +----------------------------------+------------+---------------+
 
         The homotopy process is controlled by the homotopy parameter in the model, specified by the
@@ -97,6 +125,13 @@ class HomotopyMixin(OptimizationProblem):
         :math:`\\theta = 1.0`. This requires ``GoalProgrammingMixin`` to follow
         ``HomotopyMixin`` in the inheritance order.
 
+        If ``non_linear_thresh_time_idx`` is set, :math:`\\theta` follows the homotopy process
+        only at the time steps of :py:meth:`times` before this index, and is ``0.0`` after it. The
+        history uses the :math:`\\theta` of the first time step. :math:`\\theta` must then be a
+        fixed input of the model, e.g. ``input Real theta(fixed=true)``. The step at
+        :math:`\\theta = 0` logs a warning about non-affine equations, because the linearity
+        check substitutes random values for fixed inputs.
+
         :returns: A dictionary of homotopy options.
         """
 
@@ -106,12 +141,13 @@ class HomotopyMixin(OptimizationProblem):
             "delta_theta_min": 0.01,
             "homotopy_parameter": "theta",
             "skip_intermediate_priorities": False,
+            "non_linear_thresh_time_idx": None,
         }
 
     def dynamic_parameters(self):
         dynamic_parameters = super().dynamic_parameters()
 
-        if self.__theta > 0:
+        if self.__theta > 0 and self.__theta_input is None:
             # For theta = 0, we don't mark the homotopy parameter as being dynamic,
             # so that the correct sparsity structure is obtained for the linear model.
             options = self.homotopy_options()
@@ -126,10 +162,20 @@ class HomotopyMixin(OptimizationProblem):
             raise ValueError("delta_theta_0 and delta_theta_min must be positive.")
         name = options["homotopy_parameter"]
         canonical_name, _ = self.alias_relation.canonical_signed(name)
-        variables = self.dae_variables["parameters"] + self.dae_variables["constant_inputs"]
-        if canonical_name not in {v.name() for v in variables}:
+        input_names = {v.name() for v in self.dae_variables["constant_inputs"]}
+        parameter_names = {v.name() for v in self.dae_variables["parameters"]}
+        if canonical_name not in parameter_names | input_names:
             raise ValueError(
                 f"Homotopy parameter '{name}' is not a parameter or fixed input of the model."
+            )
+
+        thresh_idx = options["non_linear_thresh_time_idx"]
+        if thresh_idx is not None and thresh_idx < 0:
+            raise ValueError("non_linear_thresh_time_idx must not be negative.")
+        if thresh_idx is not None and canonical_name not in input_names:
+            raise ValueError(
+                "non_linear_thresh_time_idx requires theta to be a fixed input of the model, "
+                "e.g. input Real theta(fixed=true)."
             )
 
         mro = type(self).__mro__
@@ -149,6 +195,10 @@ class HomotopyMixin(OptimizationProblem):
         # Overrides of homotopy_options() need not return the optional keys.
         options = {**HomotopyMixin.homotopy_options(self), **self.homotopy_options()}
         self.__check_options(options)
+        self.__thresh_idx = options["non_linear_thresh_time_idx"]
+        self.__theta_input = (
+            options["homotopy_parameter"] if self.__thresh_idx is not None else None
+        )
         delta_theta = options["delta_theta_0"]
 
         # Homotopy loop

@@ -8,19 +8,20 @@ from rtctools.optimization.collocated_integrated_optimization_problem import (
 from rtctools.optimization.goal_programming_mixin import Goal, GoalProgrammingMixin
 from rtctools.optimization.homotopy_mixin import HomotopyMixin
 from rtctools.optimization.modelica_mixin import ModelicaMixin
+from rtctools.optimization.timeseries import Timeseries
 
 from ..test_case import TestCase
 from .data_path import data_path
 
 
 class ModelSetup:
-    def __init__(self, **homotopy_options):
+    def __init__(self, model_name="ModelHomotopyParameter", **homotopy_options):
         self._homotopy_options = homotopy_options
         super().__init__(
             input_folder=data_path(),
             output_folder=data_path(),
             model_folder=data_path(),
-            model_name="ModelHomotopyParameter",
+            model_name=model_name,
         )
 
     def homotopy_options(self):
@@ -41,6 +42,13 @@ class HomotopyModel(
 ):
     def objective(self, ensemble_member):
         return self.integral("x", ensemble_member=ensemble_member)
+
+
+class DelayedHistoryModel(HomotopyModel):
+    def history(self, ensemble_member):
+        history = super().history(ensemble_member)
+        history["x"] = Timeseries(np.array([-0.4, -0.2, 0.0]), np.array([0.5, 0.8, 1.1]))
+        return history
 
 
 class StateAtGoal(Goal):
@@ -127,6 +135,8 @@ class TestHomotopyMixin(TestCase):
             {"delta_theta_min": 0.0},
             {"homotopy_parameter": "unknown"},
             {"skip_intermediate_priorities": True},
+            {"non_linear_thresh_time_idx": 3},
+            {"model_name": "ModelHomotopyInput", "non_linear_thresh_time_idx": -1},
         ]:
             with self.subTest(**options), self.assertRaises(ValueError):
                 HomotopyModel(**options).optimize()
@@ -142,3 +152,27 @@ class TestHomotopyMixin(TestCase):
                 problem.skip_intermediate_priority_1 = skip_first
                 self.assertTrue(problem.optimize())
                 self.assertEqual(problem.solved, expected)
+
+    def test_time_dependent_theta(self):
+        problem = DelayedHistoryModel("ModelHomotopyInput", non_linear_thresh_time_idx=3)
+        self.assertTrue(problem.optimize())
+        results = problem.extract_results()
+        theta = np.where(np.arange(11) < 3, 1.0, 0.0)
+        np.testing.assert_allclose(
+            results["nonlinear_output"], results["x"] + theta * results["x"] ** 2
+        )
+        # At t = 0.2, the delay reads x = 0.8 and theta from the history at t = -0.2.
+        np.testing.assert_allclose(results["delayed_nonlinear_output"][2], 0.8 + 0.8**2)
+
+    def test_negative_alias_of_theta_input(self):
+        problem = HomotopyModel(
+            "ModelHomotopyInputAlias",
+            homotopy_parameter="negative_theta",
+            non_linear_thresh_time_idx=3,
+        )
+        self.assertTrue(problem.optimize())
+        results = problem.extract_results()
+        theta = np.where(np.arange(11) < 3, -1.0, 0.0)
+        np.testing.assert_allclose(
+            results["nonlinear_output"], results["x"] + theta * results["x"] ** 2
+        )
