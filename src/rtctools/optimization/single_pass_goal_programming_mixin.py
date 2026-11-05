@@ -177,9 +177,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__problem_constraints[ensemble_member],
         )
 
-        for constraint in additional_constraints:
-            constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        constraints.extend(self._gp_constraint_tuples(additional_constraints))
         return constraints
 
     def path_constraints(self, ensemble_member):
@@ -190,9 +188,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             self.__problem_path_constraints[ensemble_member],
         )
 
-        for constraint in additional_path_constraints:
-            path_constraints.append((constraint.function(self), constraint.min, constraint.max))
-
+        path_constraints.extend(self._gp_constraint_tuples(additional_path_constraints))
         return path_constraints
 
     def solver_options(self):
@@ -242,6 +238,8 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         +---------------------------+-----------+---------------+
         | ``scale_by_problem_size`` | ``bool``  | ``False``     |
         +---------------------------+-----------+---------------+
+        | ``constraint_names``      | ``bool``  | ``False``     |
+        +---------------------------+-----------+---------------+
 
         When a priority's objective is turned into a hard constraint,
         the constraint is relaxed with ``constraint_relaxation``. Use of this option is
@@ -272,6 +270,12 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         This will make sure the objectives are always in the range [0, 1], at the cost of solving
         each goal/time step less accurately.
 
+        If ``constraint_names`` is set to ``True``, the constraints that goal programming adds
+        carry a name, ``{GoalClass}_p{priority}``, which labels their rows when
+        ``track_constraint_names`` is set, e.g. in an exported LP file. This requires
+        ``named_constraints = True``, since it makes the lists returned by ``constraints()`` and
+        ``path_constraints()`` mix 3- and 4-tuples.
+
         :returns: A dictionary of goal programming options.
         """
 
@@ -283,6 +287,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         options["check_monotonicity"] = True
         options["equality_threshold"] = 1e-8
         options["scale_by_problem_size"] = False
+        options["constraint_names"] = False
 
         # Forced options to be able to re-use GoalProgrammingMixin's
         # GoalProgrammingMixin._gp_* functions. These are not relevant for
@@ -324,6 +329,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         priorities = sorted(
             {int(goal.priority) for goal in itertools.chain(goals, path_goals) if not goal.is_empty}
         )
+        self.__priorities = priorities
 
         for priority in priorities:
             subproblems.append(
@@ -542,6 +548,10 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
             ubg = [*ubg.copy(), *ubg_extra]
 
             nlp["g"] = g
+            if "g_names" in nlp:
+                nlp["g_names"] = nlp["g_names"] + [
+                    f"objective_priority_{p}" for p in self.__priorities[: len(g_extra)]
+                ]
 
         nlp["f"] = self.__objectives[self.__current_priority]
 
