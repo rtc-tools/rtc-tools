@@ -280,11 +280,29 @@ class ModelHistory(Model):
         # NOTE: We deliberately add histories of different lengths
         h["x"] = Timeseries(np.array([-0.2, -0.1, 0.0]), np.array([0.7, 0.9, 1.1]))
         h["w"] = Timeseries(np.array([-0.1, 0.0]), np.array([0.9, np.nan]))
+        h["u"] = Timeseries(np.array([-0.1, 0.0]), np.array([0.6, 0.9]))
         return h
 
     def variable_nominal(self, variable):
         if variable in {"x", "w"}:
             return 2.0
+        else:
+            return super().variable_nominal(variable)
+
+
+class ModelHistoryControlNaN(ModelHistory):
+    def __init__(self, u_history):
+        self.__u_history = u_history
+        super().__init__()
+
+    def history(self, ensemble_member):
+        h = super().history(ensemble_member)
+        h["u"] = Timeseries(np.array([-0.1, 0.0]), np.array(self.__u_history))
+        return h
+
+    def variable_nominal(self, variable):
+        if variable == "u":
+            return 3.0
         else:
             return super().variable_nominal(variable)
 
@@ -508,6 +526,19 @@ class TestModelicaMixinScaled(TestModelicaMixin):
         self.results = self.problem.extract_results()
         self.tolerance = 1e-6
 
+    def test_state_at_before_t0_without_history(self):
+        x0 = self.results["x"][0]
+        for scaled, expected in [(False, x0), (True, x0 / 0.5)]:
+            state_at = ca.Function(
+                "state_at",
+                [self.problem.solver_input],
+                [self.problem.state_at("x", -0.1, scaled=scaled)],
+            )
+            # Not assertAlmostEqual, which passes NaN
+            np.testing.assert_allclose(
+                float(state_at(self.problem.solver_output)), expected, atol=self.tolerance
+            )
+
 
 class TestModelicaMixinNonConvex(TestCase):
     def setUp(self):
@@ -649,6 +680,14 @@ class TestModelicaMixinHistory(TestCase, unittest.TestCase):
             self.results["initial_der(w)"], (self.results["w"][0] - 0.9) / 0.1, self.tolerance
         )
 
+    def test_initial_der_u(self):
+        der_u = self.problem.map_path_expression(self.problem.der("u"), 0)
+        f = ca.Function("f", [self.problem.solver_input], [der_u])
+        # Not assertAlmostEqual, which passes NaN
+        np.testing.assert_allclose(
+            float(f(self.problem.solver_output)[0]), (0.9 - 0.6) / 0.1, atol=self.tolerance
+        )
+
     def test_delayed_feedback(self):
         np.testing.assert_allclose(
             self.results["x_delayed"],
@@ -662,6 +701,23 @@ class TestModelicaMixinHistory(TestCase, unittest.TestCase):
             rtol=self.tolerance,
             atol=self.tolerance,
         )
+
+
+class TestModelicaMixinHistoryControlNaN(TestCase, unittest.TestCase):
+    def initial_der_u(self, u_history):
+        problem = ModelHistoryControlNaN(u_history)
+        problem.optimize()
+        der_u = problem.map_path_expression(problem.der("u"), 0)
+        f = ca.Function("f", [problem.solver_input], [der_u])
+        return float(f(problem.solver_output)[0]), problem.extract_results()["u"][0]
+
+    def test_missing_t0(self):
+        der_u, u0 = self.initial_der_u([0.6, np.nan])
+        np.testing.assert_allclose(der_u, (u0 - 0.6) / 0.1, atol=1e-6)
+
+    def test_missing_before_t0(self):
+        der_u, _ = self.initial_der_u([np.nan, 0.9])
+        np.testing.assert_allclose(der_u, 0.0, atol=1e-6)
 
 
 class TestModelicaMixinSymbolicParameters(TestCase, unittest.TestCase):
