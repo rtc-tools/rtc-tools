@@ -146,8 +146,7 @@ class PumpStorage(
     def post(self):
         super().post()
         results = self.extract_results()
-        results["TotalSystemRevenueSum"] = np.sum(results["TotalSystemRevenue"])
-        print("Total Revenue is " + str(results["TotalSystemRevenueSum"]))
+        print("Total Revenue is " + str(np.sum(results["TotalSystemRevenue"])))
 
 
 # Run

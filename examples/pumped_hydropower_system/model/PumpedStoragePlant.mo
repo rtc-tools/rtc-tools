@@ -30,7 +30,6 @@ model PumpedStoragePlant
   output Real TotalGeneratingPower(min = 0.0);
   output Real SystemGeneratingRevenue;
   output Real TotalSystemRevenue;
-  output Real TotalSystemRevenueSum;
   output Real PumpCost;
 
   // Define Boolean to ensure pumped storage turbine and pump cannot be used simultaneously
@@ -62,7 +61,6 @@ equation
   PumpCost = PumpPower * cost_perP;
   SystemGeneratingRevenue = TotalGeneratingPower*cost_perP;
   TotalSystemRevenue = SystemGeneratingRevenue-PumpCost;
-  TotalSystemRevenueSum = transpose(sum(TotalSystemRevenue));
 
   // Connect elements
   connect(Turbine.QOut, LowerBasin.QLateral[2]) annotation(
