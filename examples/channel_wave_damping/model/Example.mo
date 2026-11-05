@@ -64,7 +64,7 @@ equation
   connect(Discharge.HQ, upstream.HQUp) annotation(Line(points = {{-82, 0}, {-68, 0}}, color = {0, 0, 255}));
   connect(Level.HQ, downstream.HQDown) annotation(Line(points = {{66, 0}, {82, 0}, {82, 0}, {82, 0}}, color = {0, 0, 255}));
 initial equation
-  downstream.Q[2:downstream.n_level_nodes + 1] = Inflow_Q;
-  middle.Q[2:middle.n_level_nodes + 1] = Inflow_Q;
-  upstream.Q[2:upstream.n_level_nodes + 1] = Inflow_Q;
+  downstream.Q[2:downstream.n_level_nodes + 1] = fill(Inflow_Q, downstream.n_level_nodes);
+  middle.Q[2:middle.n_level_nodes + 1] = fill(Inflow_Q, middle.n_level_nodes);
+  upstream.Q[2:upstream.n_level_nodes + 1] = fill(Inflow_Q, upstream.n_level_nodes);
 end Example;
