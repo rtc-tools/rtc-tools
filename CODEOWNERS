@@ -1,0 +1,40 @@
+# Code owners are requested for review on pull requests that change the paths below.
+# For each file, the last matching pattern applies.
+#
+# Current and emeritus committers are listed in CONTRIBUTING.md.
+
+# Default
+*                                               @jarsarasty
+
+# Core package
+/src/rtctools/_internal/                        @jackvreeken @jarsarasty
+/src/rtctools/rtctoolsapp.py                    @jackvreeken @jarsarasty
+/src/rtctools/util.py                           @jackvreeken @jarsarasty
+/src/rtctools/version.py                        @jackvreeken @jarsarasty
+/src/rtctools/data/                             @jackvreeken @FaridAlavi @jarsarasty
+
+# Optimization
+/src/rtctools/optimization/                     @jackvreeken @jarsarasty
+/src/rtctools/optimization/homotopy_mixin.py    @jbaayen @FaridAlavi
+
+# Simulation
+/src/rtctools/simulation/                       @k-horvath-deltares
+
+# Tests
+/tests/                                         @jarsarasty @jackvreeken
+
+# Examples
+/examples/                                      @k-horvath-deltares @jarsarasty
+
+# Build and dependency configuration
+/pyproject.toml                                 @jackvreeken @jarsarasty
+/tox.ini                                        @jackvreeken @jarsarasty
+/uv.lock                                        @jarsarasty
+/sonar-project.properties                       @jackvreeken @jarsarasty
+
+# CI
+/.github/                                       @jarsarasty @FaridAlavi @jackvreeken
+
+# Documentation
+/doc/                                           @BernhardBecker @k-horvath-deltares
+/*.md                                           @BernhardBecker @k-horvath-deltares
