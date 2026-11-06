@@ -226,7 +226,7 @@ class HomotopyMixin(OptimizationProblem):
                     # Recompute the sparsity structure for the nonlinear model family.
                     self.clear_transcription_cache()
 
-                if self.__theta == 1.0:
+                if self.__theta == 1.0:  # NOSONAR
                     break
                 theta_converged = self.__theta
 
