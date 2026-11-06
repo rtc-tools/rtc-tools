@@ -3,6 +3,8 @@
 ## Table of Contents
 
 - [Initial Committers](#initial-committers)
+- [Current Committers](#current-committers)
+- [Emeritus Committers](#emeritus-committers)
 - [Ways to Contribute](#ways-to-contribute)
 - [Guidelines for Creating Issues](#guidelines-for-creating-issues)
   - [Security Reporting](#security-reporting)
@@ -28,6 +30,32 @@ The initial committers of the RTC-Tools project are:
 - Joris Gillis
 - Klaudia Horváth
 - Jesús A. Rodríguez-Sarasty
+
+## Current Committers
+
+The current committers are:
+
+- Jorn Baayen
+- Tjerk Vreeken
+- Bernhard Becker
+- Farid Alavi
+- Joris Gillis
+- Klaudia Horváth
+- Jesús A. Rodríguez-Sarasty
+
+Reviews are requested automatically from the owners listed in [CODEOWNERS](CODEOWNERS), which depend on the changed files.
+
+## Emeritus Committers
+
+Former committers and contributors who are no longer committers. Emeritus status does not affect membership of the TSC.
+
+- Olav van Duin
+- Teresa Piovesan
+- Ailbhe Mitchell
+- Sjoerd Geevers
+- Joris Bentvelsen
+- Jesse van der Wees
+- Matthijs den Toom
 
 ## Ways to Contribute
 
