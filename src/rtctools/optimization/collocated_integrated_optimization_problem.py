@@ -1617,8 +1617,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                     # Inputs
                     states_and_algebraics_and_controls = ca.vertcat(
                         *[
-                            self.variable_nominal(variable)
-                            * self.__integrators[ensemble_member][variable]
+                            self.__integrators[ensemble_member][variable]
                             for variable in integrated_variable_names
                         ],
                         interpolated_states[
@@ -2554,8 +2553,11 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 inds = indices[variable]
                 initial_value = X[inds]
                 n = self.__integrators[ensemble_member][variable].size1()
-                results[variable] = self.variable_nominal(variable) * np.concatenate(
-                    [[initial_value], np.array(integrators_output[j : j + n, :]).ravel()]
+                results[variable] = np.concatenate(
+                    [
+                        [self.variable_nominal(variable) * initial_value],
+                        np.array(integrators_output[j : j + n, :]).ravel(),
+                    ]
                 )
                 j += n
 
@@ -2640,18 +2642,19 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 pass
             else:
                 times = self.times(canonical)
+                nominal = self.variable_nominal(canonical)
 
                 if self.integrate_states:
-                    nominal = 1
                     if t == self.initial_time:
                         sym = sign * X[inds]
+                        if not scaled and nominal != 1:
+                            sym *= nominal
                         found = True
                     else:
                         variable_values = ca.horzcat(
-                            sign * X[inds], self.__integrators[ensemble_member][canonical]
+                            X[inds], self.__integrators[ensemble_member][canonical] / nominal
                         ).T
                 else:
-                    nominal = self.variable_nominal(canonical)
                     variable_values = X[inds]
 
                 if not found:
@@ -2662,7 +2665,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                             history_timeseries = history[canonical]
                         except KeyError:
                             if extrapolate:
-                                sym = variable_values[0]
+                                sym = variable_values[0] * nominal
                             else:
                                 sym = np.nan
                         else:
@@ -2757,11 +2760,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Find canonical variable
         canonical, sign = self.alias_relation.canonical_signed(variable)
-        nominal = self.variable_nominal(canonical)
-        state = self.state_vector(canonical, ensemble_member)
+        state = self.variable_nominal(canonical) * self.state_vector(canonical, ensemble_member)
         if self.integrate_states and canonical in self.__integrators[ensemble_member]:
             state = ca.vertcat(state, ca.transpose(self.__integrators[ensemble_member][canonical]))
-        state *= nominal
         if sign < 0:
             state *= -1
 

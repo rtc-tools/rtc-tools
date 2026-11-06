@@ -508,6 +508,19 @@ class TestModelicaMixinScaled(TestModelicaMixin):
         self.results = self.problem.extract_results()
         self.tolerance = 1e-6
 
+    def test_state_at_before_t0_without_history(self):
+        x0 = self.results["x"][0]
+        for scaled, expected in [(False, x0), (True, x0 / 0.5)]:
+            state_at = ca.Function(
+                "state_at",
+                [self.problem.solver_input],
+                [self.problem.state_at("x", -0.1, scaled=scaled)],
+            )
+            # Not assertAlmostEqual, which passes NaN
+            np.testing.assert_allclose(
+                float(state_at(self.problem.solver_output)), expected, atol=self.tolerance
+            )
+
 
 class TestModelicaMixinNonConvex(TestCase):
     def setUp(self):
