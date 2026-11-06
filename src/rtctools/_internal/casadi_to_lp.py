@@ -5,6 +5,8 @@ import textwrap
 import casadi as ca
 import numpy as np
 
+from rtctools._internal.lp_names import _lp_unique_safe_names
+
 # The LP file format limits line length to 255 characters.
 LP_MAX_LINE_WIDTH = 255
 
@@ -315,7 +317,11 @@ def _sanitize_var_names(
     integrated states or scalar parameters receive no ``__t`` suffix.
 
     Square brackets in names are replaced with ``_I`` / ``I_`` because CPLEX does
-    not accept ``[`` or ``]`` in LP variable names.
+    not accept ``[`` or ``]`` in LP variable names. A name that an LP reader would misread
+    (a keyword such as ``max``, a name starting with ``inf``, a digit or a period,
+    or a name starting with ``e`` or ``E`` followed by a digit, another ``e`` or ``E``, or
+    nothing, such as ``e5`` or ``eels``) gets a ``_`` prefix. Names that end up equal get a
+    ``__d{n}`` suffix.
 
     Args:
         indices_per_member: Per-member mapping from variable name to its slot indices
@@ -359,7 +365,17 @@ def _sanitize_var_names(
     arr = np.array(var_names, dtype=str)
     arr = np.char.replace(arr, "[", "_I")
     arr = np.char.replace(arr, "]", "I_")
-    return arr.tolist()
+    names = arr.tolist()
+    result = _lp_unique_safe_names(names, reserved=frozenset({LP_ZERO_VAR}))
+    renamed = [(a, b) for a, b in zip(names, result, strict=True) if a != b]
+    if renamed:
+        logger.info(
+            "Renamed %d LP variable names that an LP reader would misread or that were not "
+            "unique, e.g. %s",
+            len(renamed),
+            ", ".join(f"{a} -> {b}" for a, b in renamed[:5]),
+        )
+    return result
 
 
 def _write_lp_file(
