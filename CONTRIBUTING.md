@@ -60,6 +60,11 @@ please install the latest development version of RTC-Tools from the [GitHub repo
     - Safe data formats that can be shared publicly include CSV, JSON, or small XML files.
     - If you do not want to make your data publicly available in the issue tracker, please report your issue by emailing [info@rtctools.energy](mailto:info@rtctools.energy).
 4. **Labels**: Use labels to categorize the issue. This helps in prioritizing and resolving issues.
+   Maintainers may add the `good first issue` label when an issue is narrowly scoped,
+   has a clear expected outcome, and points to the relevant code or documentation.
+   Contributors looking for a first task should prefer issues with that label and
+   confirm in the issue discussion that the proposed approach is still appropriate
+   before starting work.
 
 ### Security Reporting
 
