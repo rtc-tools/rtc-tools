@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -634,11 +634,21 @@ name = "highspy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/66/e74b1a805f65c52666e3b54cfc1ba783e745c2c8a7abaae9e7ef2d9e7270/highspy-1.14.0.tar.gz", hash = "sha256:b09cb5e3179a25fc615b8b0941130b0f71e19372c119f3dd620d63b54cd3ca4c", size = 1654913, upload-time = "2026-04-06T15:53:31.738Z" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/14/bc6ee11233ad23426274007d89c0a623ccf960639a891dfff9431300cb5b/highspy-1.14.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:3647f57e0edebbd0a51cf45d3f07f1c62a1f76f9cbb0e72324938ec52fd048da", size = 2310142, upload-time = "2026-04-06T15:51:33.956Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/82/3c8a0545c024c8cf6f3c7ad133f41eddd934b301404df5d577b923031349/highspy-1.14.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:ea9edf1b15dc93a8c129a0d08bad17597ef709d16026e76c2c2da1e5ec486ded", size = 2115436, upload-time = "2026-04-06T15:51:35.751Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/bd/d48267a781e2ee2ab978207dfe2533f3f35cf59f23a3d7b1582c9dae1b33/highspy-1.14.0-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d4f929802b418e0746aa6d7a0c1ab05abae300f483a8593a07c6cea653b062de", size = 2404088, upload-time = "2026-04-06T15:51:37.412Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/d0/a13c8d9bc7d45759c0d68837a5939a93dff9d33fad0ad40b3fe8a9767dd6/highspy-1.14.0-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ee3dd40da51f1f7f07d629044228ffd2f25d7aa561a3f08b64e2696bdf927355", size = 2625158, upload-time = "2026-04-06T15:51:39.139Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/89/d37f21b9e632e9008a0f49a56ff1b10114341aa8465aa6a0d6a85e3e4909/highspy-1.14.0-cp310-cp310-manylinux_2_26_i686.manylinux_2_28_i686.whl", hash = "sha256:39e78e5a08d29382fae67b8dd144dc9947b022ad295a0fc679f93c096603efb0", size = 2788617, upload-time = "2026-04-06T15:51:41.094Z" },
+    { url = "https://files.pythonhosted.org/packages/16/e0/43f49fce9bdac40d53510701c092f33a4c8f4606d7e3aebfe455329a8b06/highspy-1.14.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:b66d48939177301b9ebee4b6e13ef97b49a0a389cc0a7360dcbb1cdd57cb31f4", size = 3460987, upload-time = "2026-04-06T15:51:42.955Z" },
+    { url = "https://files.pythonhosted.org/packages/14/dd/eb62bbf2dfed24d766f23541e79706bde93154a22d91e69e787ff68eb238/highspy-1.14.0-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:2d4d8c405615bae110306531da4c0b04715aca39b34c853c1598edac5c0ca1fa", size = 4043807, upload-time = "2026-04-06T15:51:44.789Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/d1/403e78390f2e707318effe15b410e16f6fe25266e4e8c9c35c0c271b6520/highspy-1.14.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:d417857853e440b91733418acb55b260f3c96a0d7c454c1c7a0ac5fd236c77e4", size = 3705933, upload-time = "2026-04-06T15:51:47.109Z" },
+    { url = "https://files.pythonhosted.org/packages/18/93/d2a2bcaf524921e1dbb96e0eb3cc818eb3c1ad8d110361dc95bfb820a892/highspy-1.14.0-cp310-cp310-win32.whl", hash = "sha256:c0e27e6d2309f2a1a6ba03c54399580c9af89f736911d00a4a58569475da9d2c", size = 1953893, upload-time = "2026-04-06T15:51:48.638Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/c9/f2dfa17423afcf2b17ad28452dbff75870614594121a10f8424cd948547e/highspy-1.14.0-cp310-cp310-win_amd64.whl", hash = "sha256:41c2bcca7ab720db5cfb7f89fa949a3336b476aac9c68cf0e501a3ca5beb18fc", size = 2319788, upload-time = "2026-04-06T15:51:50.079Z" },
     { url = "https://files.pythonhosted.org/packages/73/4e/c813156aa513eb3344b333c1424373cebf1f5843868b2ba5c49c64beecde/highspy-1.14.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:69558127aabad8b5718a58009dc3d36618c3aa5aa5e733206c32ce396189a132", size = 2310870, upload-time = "2026-04-06T15:51:51.586Z" },
     { url = "https://files.pythonhosted.org/packages/3f/6c/d4baa83e8745d729764bf960b51828e9c99c90b4f5cd99e65b59fbf2b6f9/highspy-1.14.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:3699fc8072a70664d5bbaf1c9239f8e2e8700c5090f57486f2ce4567f9b2b6aa", size = 2116701, upload-time = "2026-04-06T15:51:53.175Z" },
     { url = "https://files.pythonhosted.org/packages/cd/64/9dbafa1f3f9ec9293c4038d64b4a49a7a577e1ffcc5c48cf861849d2cff0/highspy-1.14.0-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4dd237b94494b14693edbebd05a0068fa02ae36b2629e6353be42bc2b491c1f0", size = 2404995, upload-time = "2026-04-06T15:51:54.664Z" },
