@@ -1,6 +1,8 @@
 import inspect
 import logging
 import os
+import tempfile
+from collections import OrderedDict
 from copy import deepcopy
 from datetime import datetime, timedelta
 
@@ -76,6 +78,55 @@ def create_expectation_list(files, expected_values):
         key_to_file(_file): _expected_value
         for (_file, _expected_value) in zip(files, expected_values, strict=True)
     }
+
+
+class _MockAttributeVariable:
+    datatype = np.dtype("float64")
+
+    def __init__(self, **ncattrs):
+        self.__dict__.update(ncattrs)
+
+
+class _MockStations:
+    def __init__(self, attributes, attribute_variables):
+        self._attributes = OrderedDict(attributes)
+        self._attribute_variables = dict(attribute_variables)
+
+    @property
+    def station_ids(self):
+        return self._attributes.keys()
+
+    @property
+    def attributes(self):
+        return self._attributes
+
+    @property
+    def attribute_variables(self):
+        return self._attribute_variables
+
+
+def create_mock_stations():
+    attribute_variables = {
+        "lat": _MockAttributeVariable(
+            standard_name="latitude",
+            long_name="Station coordinates, latitude",
+            units="degrees_north",
+            axis="Y",
+        ),
+        "lon": _MockAttributeVariable(
+            standard_name="longtitude",
+            long_name="Station coordinates, longtitude",
+            units="degrees_east",
+            axis="X",
+        ),
+    }
+    attributes = OrderedDict(
+        [
+            ("loc_a", {"lat": 51.9856484, "lon": 4.3780269}),
+            ("loc_b", {"lat": 52.0879885, "lon": 5.1569479}),
+        ]
+    )
+    return _MockStations(attributes, attribute_variables)
 
 
 class TestInputDataset_requirements(TestCase):
@@ -375,13 +426,39 @@ class TestImportDataset(TestCase):
                         values.tolist(),
                     )
 
+    def test_missing_time_variable_raises(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            nc_path = os.path.join(tmp_dir, "missing_time.nc")
+            with Dataset(nc_path, mode="w", format="NETCDF3_CLASSIC") as ds:
+                ds.createDimension("station", 1)
+                ds.createDimension("char_leng_id", 5)
+                station_var = ds.createVariable("station_id", "c", ("station", "char_leng_id"))
+                station_var.cf_role = "timeseries_id"
+                station_var[0, :] = list("loc_a")
+
+            with self.assertRaisesRegex(Exception, "No time variable found in file"):
+                netcdf.ImportDataset(tmp_dir, "missing_time")
+
+    def test_missing_station_variable_raises(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            nc_path = os.path.join(tmp_dir, "missing_station.nc")
+            with Dataset(nc_path, mode="w", format="NETCDF3_CLASSIC") as ds:
+                ds.createDimension("time", None)
+                time_var = ds.createVariable("time", "f8", ("time",))
+                time_var.standard_name = "time"
+                time_var.axis = "T"
+                time_var.units = "seconds since 1970-01-01 00:00:00"
+                time_var[:] = [0.0, 60.0]
+
+            with self.assertRaisesRegex(Exception, "No station variable found in file"):
+                netcdf.ImportDataset(tmp_dir, "missing_station")
+
 
 class TestExportDataset(TestCase):
     def tearDown(self):
-        try:
-            self.dataset.close()
-        except Exception:
-            pass
+        if hasattr(self, "dataset") and self.dataset is not None:
+            if not hasattr(self.dataset, "isopen") or self.dataset.isopen():
+                self.dataset.close()
         if os.path.exists(export_path):
             os.remove(export_path)
 
@@ -445,12 +522,10 @@ class TestExportDataset(TestCase):
         self.assertTrue(np.array_equal(self.dataset.variables["time"][:], times + 300))
 
     def test_write_station_data(self):
-        # TODO: rewrite test to be independent of succes of reading a netcdf file.
-        self.import_dataset = netcdf.ImportDataset(data_path(), "timeseries_import_ensemble")
-        stations = self.import_dataset.read_station_data()
+        stations = create_mock_stations()
 
         self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
-        self.dataset.write_station_data(stations, stations.station_ids)
+        self.dataset.write_station_data(stations, list(stations.station_ids))
         self.dataset.close()
         self.dataset = get_exported_dataset()
 
@@ -536,21 +611,16 @@ class TestExportDataset(TestCase):
         self.check_attributes(_variable, _attributes, _attribute_values)
 
     def test_create_variables_without_ensemble(self):
-        # TODO: rewrite test to be independent of succes of reading a netcdf file.
-
         unique_parameter_ids = ["u_min", "u_max", "x", "w", "constant_input", "u"]
         ensemble_size = 1
         initial_time = 0.0
         reference_datetime = datetime(1970, 1, 1, 0, 0)
         times = [x * 60 for x in range(25)]
 
-        self.import_dataset = netcdf.ImportDataset(
-            data_path(), "timeseries_import_ensemblesize1_noRealization"
-        )
-        stations = self.import_dataset.read_station_data()
+        stations = create_mock_stations()
 
         self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
-        self.dataset.write_station_data(stations, stations.station_ids)
+        self.dataset.write_station_data(stations, list(stations.station_ids))
         self.dataset.write_ensemble_data(ensemble_size)
         self.dataset.write_times(times, initial_time, reference_datetime)
         self.dataset.create_variables(unique_parameter_ids, ensemble_size)
@@ -572,8 +642,6 @@ class TestExportDataset(TestCase):
         # TODO: check fill_value
 
     def test_create_variables_with_ensemble(self):
-        # TODO: rewrite test to be independent of succes of reading a netcdf file.
-
         unique_parameter_ids = [
             "u_min",
             "u_max",
@@ -588,13 +656,10 @@ class TestExportDataset(TestCase):
         reference_datetime = datetime(1970, 1, 1, 0, 0)
         times = [x * 60 for x in range(25)]
 
-        self.import_dataset = netcdf.ImportDataset(
-            data_path(), "timeseries_import_ensemblesize1_noRealization"
-        )
-        stations = self.import_dataset.read_station_data()
+        stations = create_mock_stations()
 
         self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
-        self.dataset.write_station_data(stations, stations.station_ids)
+        self.dataset.write_station_data(stations, list(stations.station_ids))
         self.dataset.write_ensemble_data(ensemble_size)
         self.dataset.write_times(times, initial_time, reference_datetime)
         self.dataset.create_variables(unique_parameter_ids, ensemble_size)
@@ -644,6 +709,7 @@ class TestExportDataset(TestCase):
             * 2
             + [deepcopy(x_var_e)],
         )
+        self.expected_ensemble_sizes = create_expectation_list(files, (1, 1, 3))
 
         frame = inspect.currentframe()
         func_name = inspect.getframeinfo(frame).function
@@ -652,37 +718,41 @@ class TestExportDataset(TestCase):
             self._subtest_write_output_values(file_key)
 
     def _subtest_write_output_values(self, file_key):
-        # TODO: rewrite test to be independent of succes of reading a netcdf file.
-
         unique_parameter_ids = ["u_min", "u_max", "x", "w", "constant_input", "u"]
         initial_time = 0.0
         reference_datetime = datetime(1970, 1, 1, 0, 0)
         times = [x * 60 for x in range(25)]
 
-        self.import_dataset = netcdf.ImportDataset(data_path(), filepaths[file_key])
-        stations = self.import_dataset.read_station_data()
-        ensemble_size = self.import_dataset.ensemble_size
+        stations = create_mock_stations()
+        station_ids = list(stations.station_ids)
+        ensemble_size = self.expected_ensemble_sizes[file_key]
 
         variables = {}
-        for station_id in stations.station_ids:
+        for station_id in station_ids:
+            station_index = station_ids.index(station_id)
             variables[station_id] = {}
             for _variable in unique_parameter_ids:
                 variables[station_id][_variable] = {}
                 for ensemble_member in range(ensemble_size):
-                    variables[station_id][_variable][ensemble_member] = (
-                        self.import_dataset.read_timeseries_values(
-                            list(stations.station_ids).index(station_id), _variable, ensemble_member
-                        )
-                    )
+                    if _variable == "x":
+                        if ensemble_size == 1:
+                            values = self.expected_x_values[station_id][file_key][:, station_index]
+                        else:
+                            values = self.expected_x_values[station_id][file_key][
+                                :, station_index, ensemble_member
+                            ]
+                    else:
+                        values = np.zeros(len(times))
+                    variables[station_id][_variable][ensemble_member] = values
 
         self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
         self.dataset.write_times(times, initial_time, reference_datetime)
-        self.dataset.write_station_data(stations, stations.station_ids)
+        self.dataset.write_station_data(stations, station_ids)
         self.dataset.write_ensemble_data(ensemble_size)
 
         self.dataset.create_variables(unique_parameter_ids, ensemble_size)
 
-        for station_id in stations.station_ids:
+        for station_id in station_ids:
             for _variable in unique_parameter_ids:
                 for ensemble_member in range(ensemble_size):
                     self.dataset.write_output_values(
@@ -694,25 +764,59 @@ class TestExportDataset(TestCase):
                     )
 
         self.dataset.close()
-        self.dataset = netcdf.ImportDataset(data_path(), "timeseries_export")
-        stations = self.dataset.read_station_data()
-        ensemble_size = self.import_dataset.ensemble_size
+        self.dataset = get_exported_dataset()
 
         for station_id in self.expected_x_values.keys():
-            station_index = list(stations.station_ids).index(station_id)
+            station_index = station_ids.index(station_id)
             for ensemble_member in range(ensemble_size):
-                values = self.dataset.read_timeseries_values(station_index, "x", ensemble_member)
-
                 if ensemble_size == 1:
+                    values = np.ma.filled(self.dataset.variables["x"][:, station_index], np.nan)
                     self.assertSequenceEqual(
                         self.expected_x_values[station_id][file_key][:, station_index].tolist(),
                         values.tolist(),
                     )
                 else:
+                    values = np.ma.filled(
+                        self.dataset.variables["x"][:, station_index, ensemble_member], np.nan
+                    )
                     self.assertSequenceEqual(
                         self.expected_x_values[station_id][file_key][:, station_index][
                             :, ensemble_member
                         ].tolist(),
                         values.tolist(),
                     )
-        self.dataset._ImportDataset__dataset.close()
+        self.dataset.close()
+
+    def test_roundtrip_import_export_integration(self):
+        import_dataset = netcdf.ImportDataset(data_path(), "timeseries_import_ensemble")
+        stations = import_dataset.read_station_data()
+        station_ids = list(stations.station_ids)
+        ensemble_size = import_dataset.ensemble_size
+        times = [x * 60 for x in range(25)]
+
+        self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
+        self.dataset.write_times(times, 0.0, datetime(1970, 1, 1, 0, 0))
+        self.dataset.write_station_data(stations, station_ids)
+        self.dataset.write_ensemble_data(ensemble_size)
+        self.dataset.create_variables(["x"], ensemble_size)
+
+        for station_index, station_id in enumerate(station_ids):
+            for ensemble_member in range(ensemble_size):
+                values = import_dataset.read_timeseries_values(station_index, "x", ensemble_member)
+                self.dataset.write_output_values(
+                    station_id, "x", ensemble_member, values, ensemble_size
+                )
+        self.dataset.close()
+
+        reimported = netcdf.ImportDataset(data_path(), "timeseries_export")
+        try:
+            for station_index in range(len(station_ids)):
+                for ensemble_member in range(ensemble_size):
+                    expected = import_dataset.read_timeseries_values(
+                        station_index, "x", ensemble_member
+                    )
+                    actual = reimported.read_timeseries_values(station_index, "x", ensemble_member)
+                    self.assertSequenceEqual(expected.tolist(), actual.tolist())
+        finally:
+            reimported._ImportDataset__dataset.close()
+            import_dataset._ImportDataset__dataset.close()
