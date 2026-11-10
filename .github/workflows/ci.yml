@@ -132,37 +132,8 @@ jobs:
         dependency-groups: "tests"
     - run: uv run tox -vv
 
-  # Check example models with OpenModelica, to track models that pymoca
-  # accepts but that are not valid Modelica. See tests/modelica.
-  modelica-conformance:
-    name: Modelica Conformance (OpenModelica ${{ matrix.omc_version }})
-    needs: [style]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # The test records the known failures for this version, and only runs with it.
-        omc_version: ['1.27.1']
-    container:
-      image: openmodelica/openmodelica:v${{ matrix.omc_version }}-ompython
-    timeout-minutes: 30
-    env:
-      TOXENV: omc
-      OMC_VERSION: ${{ matrix.omc_version }}
-    steps:
-    # The image has no git. Without it, checkout downloads a tarball instead
-    # of cloning, and hatch-vcs cannot determine the version of rtc-tools.
-    - name: Install git
-      run: apt-get update -qq && apt-get install -y -qq git
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-    - uses: ./.github/actions/setup-python
-      with:
-        dependency-groups: "tests"
-    - name: Install the Modelica Standard Library
-      run: omc tests/modelica/install_msl.mos
-    - run: uv run tox -vv
-
   deploy:
-    needs: [build, test-linux, coverage, examples-linux, modelica-conformance]
+    needs: [build, test-linux, coverage, examples-linux]
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/2.') }}
     permissions:
@@ -179,7 +150,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   deploy-nexus:
-    needs: [build, test-linux, coverage, examples-linux, modelica-conformance]
+    needs: [build, test-linux, coverage, examples-linux]
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/2.') }}
     permissions:

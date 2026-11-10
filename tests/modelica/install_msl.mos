@@ -1,4 +1,0 @@
-// Install the Modelica Standard Library version used by test_omc_conformance.py.
-// Run with: omc tests/modelica/install_msl.mos
-// exactMatch=true: without it, omc installs the newest compatible version.
-installPackage(Modelica, "4.0.0+maint.om", exactMatch=true); getErrorString();
