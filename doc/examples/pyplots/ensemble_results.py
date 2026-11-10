@@ -9,15 +9,15 @@ forecast_names = ["forecast1", "forecast2"]
 dir_template = "../../../examples/ensemble/reference_output/{}/timeseries_export.csv"
 
 # Import Data
-forcasts = {}
+forecasts = {}
 for forecast in forecast_names:
     data_path = dir_template.format(forecast)
-    forcasts[forecast] = np.genfromtxt(
+    forecasts[forecast] = np.genfromtxt(
         data_path, delimiter=",", encoding=None, dtype=None, names=True, case_sensitive="lower"
     )
 
 # Get times as datetime objects
-times = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in forcasts[forecast_names[0]]["time"]]
+times = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in forecasts[forecast_names[0]]["time"]]
 
 n_subplots = 3
 fig, axarr = plt.subplots(n_subplots, sharex=True, figsize=(8, 4 * n_subplots))
@@ -36,7 +36,7 @@ axarr[2].set_ylabel("Flow Rate [m³/s]")
 # Plot Ensemble Members
 for idx, forecast in enumerate(forecast_names):
     # Upper Subplot
-    results = forcasts[forecast]
+    results = forecasts[forecast]
     if idx == 0:
         axarr[0].plot(times, results["v_max"], label="Max", linewidth=2, color="r", linestyle="--")
         axarr[0].plot(times, results["v_min"], label="Min", linewidth=2, color="g", linestyle="--")

@@ -216,7 +216,7 @@ class ImportDataset:
         station_dim = self.__station_variable.dimensions[0]
         timeseries_variable = self.__dataset.variables[variable_name]
 
-        # possibly usefull for in a debugger mode
+        # possibly useful for in a debugger mode
         # assert set(timeseries_variable.dimensions)==set(('time', 'station')) \
         #        or set(timeseries_variable.dimensions)==set(('time', 'station', 'realization'))
 

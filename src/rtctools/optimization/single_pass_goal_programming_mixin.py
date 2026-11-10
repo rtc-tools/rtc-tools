@@ -286,7 +286,7 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         options["scale_by_problem_size"] = False
         options["constraint_names"] = False
 
-        # Forced options to be able to re-use GoalProgrammingMixin's
+        # Forced options to be able to reuse GoalProgrammingMixin's
         # GoalProgrammingMixin._gp_* functions. These are not relevant for
         # SinglePassGoalProgrammingMixin, or should be set to a certain value
         # for it to make sense.

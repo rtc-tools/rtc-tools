@@ -44,7 +44,7 @@ Note that rtc-tools-channel-flow is a dependency of rtc-tools which is included 
 Downloading and running examples
 ================================
 
-To check whether the installation was succesful, the basic example can be
+To check whether the installation was successful, the basic example can be
 used. If RTC-Tools was not installed from source, the examples need to be
 downloaded first::
 
@@ -57,7 +57,7 @@ downloaded first::
     # Run the example
     python example.py
 
-If the installation was succesful, you should see that the solver succeeds:
+If the installation was successful, you should see that the solver succeeds:
 
 .. image:: images/basic_example_console.png
 

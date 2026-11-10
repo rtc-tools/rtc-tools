@@ -27,7 +27,7 @@ The problem is given below.
   :pyobject: ExampleOpt
 
 The desired outflow is set to be 1.0 cubic meter / second.
-The fixed inflow is ususally 0.0 except at a few moments.
+The fixed inflow is usually 0.0 except at a few moments.
 To get the desired output, the ideal controllable inflow
 is the outflow minus the fixed inflow shifted 24 hours in advance.
 The results are illustrated in the plot below.

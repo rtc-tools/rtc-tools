@@ -182,7 +182,7 @@ All together, the whole example script is as follows:
 Running the Optimization Problem
 --------------------------------
 
-.. note:: An explaination of bonmin behaviour and output goes here.
+.. note:: An explanation of bonmin behaviour and output goes here.
 
 
 
