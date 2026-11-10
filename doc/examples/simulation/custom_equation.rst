@@ -28,7 +28,7 @@ The Modelica file is given below.
 
 To add custom equations to the simulation problem,
 the method ``extra_equations`` is overwritten.
-This is illustrated in the optimiziation problem below.
+This is illustrated in the optimization problem below.
 
 .. literalinclude:: ../../../examples/simulation_with_custom_equations/src/simple_model.py
   :language: python

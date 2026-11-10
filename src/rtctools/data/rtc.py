@@ -87,7 +87,7 @@ class DataConfig:
                             raise Exception(message)
                         if external_id in self.__parameter_map:
                             message = (
-                                "Found more than one interal parameter mapped to external "
+                                "Found more than one internal parameter mapped to external "
                                 f"modelId {external_id.model_id}, "
                                 f"locationId {external_id.location_id}, "
                                 f"parameterId {external_id.parameter_id} in {path}."

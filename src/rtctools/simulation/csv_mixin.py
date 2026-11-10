@@ -153,7 +153,7 @@ class CSVMixin(IOMixin):
 
         # Load initial states from __initial_state
         for variable, value in self.__initial_state.items():
-            # Get the cannonical vars and signs
+            # Get the canonical vars and signs
             canonical_var, sign = self.alias_relation.canonical_signed(variable)
 
             # Only store variables that are allowed to have an initial state

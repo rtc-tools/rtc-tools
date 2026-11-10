@@ -98,7 +98,7 @@ class LinearizedOrderGoalProgrammingMixin(_GoalProgrammingMixinBase):
         approximated linearly for any goals where order > 1. Note that this option
         does not work with minimization goals of higher order. Instead, it is
         suggested to transform these minimization goals into goals with a target (and
-        function range) when using this option. Note that this option can be overriden
+        function range) when using this option. Note that this option can be overridden
         on the level of a goal by using a :py:class:`LinearizedOrderGoal` (see
         :py:attr:`LinearizedOrderGoal.linearize_order`).
         """

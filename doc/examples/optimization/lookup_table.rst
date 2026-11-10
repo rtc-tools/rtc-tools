@@ -19,7 +19,7 @@ The Model
 .. note::
 
     This example uses the same hydraulic model as the basic example. For a
-    detalied explaination of the hydraulic model, see :doc:`basic`.
+    detailed explanation of the hydraulic model, see :doc:`basic`.
 
 
 In OpenModelica Connection Editor, the model looks like this:
@@ -153,7 +153,7 @@ However, it is usually helpful to track how the solution changes after
 optimizing each priority level. To track these changes, we need to add three
 methods.
 
-We define the ``priority_completed()`` method to inspect and summerize the
+We define the ``priority_completed()`` method to inspect and summarize the
 results. These are appended to our intermediate results variable after each
 priority is completed.
 
@@ -162,8 +162,8 @@ priority is completed.
   :pyobject: Example.priority_completed
   :lineno-match:
 
-We output our intermediate results using the ``post()`` method. Again, we nedd
-to call the ``super()`` method to avoid overwiting the internal method.
+We output our intermediate results using the ``post()`` method. Again, we need
+to call the ``super()`` method to avoid overwriting the internal method.
 
 .. literalinclude:: ../../../examples/lookup_table/src/example.py
   :language: python
@@ -219,7 +219,7 @@ minimize the number of states in violation of the water level goal.
 
 After optimizing for the priority 2 goal, the solver was able to find a solution
 that reduced the integral of ``Q_release`` without increasing the number of
-timesteps where the water level exceded the limit.
+timesteps where the water level exceeded the limit.
 
 Extracting Results
 ------------------

@@ -78,7 +78,7 @@ The python script consists of the following blocks:
 * Definition of the optimization problem class
 
   * Pre-processing
-  * Setting of varaible nominals
+  * Setting of variable nominals
   * Definition of constraints
   * Additional configuration of the solver
   * Post-processing
@@ -156,7 +156,7 @@ joining the upper and lower reservoirs cannot be used at the same time.
 
 Variable nominals can be set in the OpenModelica model file, or via the variable_nominal definition. 
 This can be useful when a variable nominal depends on a non-fixed value. Here the 
-power_nominal caluclated in the ``pre`` is set to be the nominal for the states ``TotalGeneratingPower``
+power_nominal calculated in the ``pre`` is set to be the nominal for the states ``TotalGeneratingPower``
 and ``TurbinePower``.
 
 .. literalinclude:: ../../../examples/pumped_hydropower_system/src/example.py

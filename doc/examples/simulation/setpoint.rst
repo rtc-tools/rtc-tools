@@ -110,7 +110,7 @@ the python script, ``\src\example.py``.
 
 Because we want to view the water volume in the storage element in the output
 file, we also define an output variable ``storage_V`` and set it equal to the
-corresponding state variable ``storage.V``. Dito for ``Q_release = P_control``.
+corresponding state variable ``storage.V``. Ditto for ``Q_release = P_control``.
 
 The Simulation Problem
 ----------------------

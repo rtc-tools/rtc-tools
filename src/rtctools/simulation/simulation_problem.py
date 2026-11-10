@@ -1198,7 +1198,7 @@ class SimulationProblem(DataStoreAccessor):
                 pass
             else:
                 if logger.getEffectiveLevel() == logging.DEBUG:
-                    logger.debug(f"Read intial state for {variable}")
+                    logger.debug(f"Read initial state for {variable}")
 
         return initial_state_dict
 

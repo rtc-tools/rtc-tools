@@ -170,7 +170,7 @@ optimizer.
 For the goals that want to apply our goals to every timestep, so we use the
 ``path_goals()`` method. This is a method that returns a list of the path goals
 we defined above. Note that with path goals,  each timestep is implemented as an
-independant goal- if we cannot satisfy our min/max on time step A, it will not
+independent goal- if we cannot satisfy our min/max on time step A, it will not
 affect our desire to satisfy the goal at time step B. Goals that inherit
 ``StateGoal`` are always path goals and must always be initialized with the
 parameter ``self``.
@@ -206,8 +206,8 @@ priority is completed.
   :lineno-match:
 
 We want some way to output our intermediate results. This is accomplished using
-the ``post()`` method. Again, we nedd to call the ``super()`` method to avoid
-overwiting the internal method.
+the ``post()`` method. Again, we need to call the ``super()`` method to avoid
+overwriting the internal method.
 
 .. literalinclude:: ../../../examples/goal_programming/src/example.py
   :language: python

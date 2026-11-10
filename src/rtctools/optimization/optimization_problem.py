@@ -391,7 +391,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     ) -> tuple[bool, int]:
         """
         Translates the returned solver statistics into a boolean and log level
-        to indicate whether the solve was succesful, and how to log it.
+        to indicate whether the solve was successful, and how to log it.
 
         :param solver_stats: Dictionary containing information about the
                              solver status. See explanation below.

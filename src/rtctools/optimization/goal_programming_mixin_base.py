@@ -151,7 +151,7 @@ class Goal(metaclass=ABCMeta):
     .. math::
         g_{low}(\epsilon) \leq g(x).
 
-    Similary, if ``target_max`` is set, but not ``target_min``,
+    Similarly, if ``target_max`` is set, but not ``target_min``,
     the target goal becomes a upper bound target goal
     and the constraint on :math:`g(x)` becomes
 

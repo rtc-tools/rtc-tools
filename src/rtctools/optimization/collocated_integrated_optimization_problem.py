@@ -3235,7 +3235,7 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
                 max_r = max(np.abs(data))
                 min_r = min(np.abs(data))
             except ValueError:
-                # Emtpy constraint?
+                # Empty constraint?
                 continue
 
             assert min_r != 0.0
