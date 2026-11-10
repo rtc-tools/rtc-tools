@@ -9,7 +9,8 @@ not valid Modelica (issue #1873). This test runs omc on every example model:
 - messages: which errors and warnings does omc report?
 
 EXAMPLE_MODELS lists every example model and its known failures, as regular
-expressions of the messages omc reports. The test fails when omc reports an
+expressions of the messages omc reports. The test fails when an example folder
+with Modelica files has no model in the list. It also fails when omc reports an
 error or warning that is not listed, and, as a strict expected failure (xfail),
 while a listed message is still reported. Once a failure is fixed, its message
 disappears, pytest reports XPASS(strict) as a failure, and you remove the
@@ -209,6 +210,13 @@ def modelica_library_folders():
         for ep in importlib.metadata.entry_points(group="rtctools.libraries.modelica")
         if ep.name == "library_folder"
     ]
+
+
+def test_all_examples_listed():
+    """Fail when an example with Modelica files is missing from EXAMPLE_MODELS, or the other way."""
+    examples_with_models = {p.parent.parent.name for p in EXAMPLES_PATH.glob("*/model/*.mo")}
+    listed_examples = {model.example for model in EXAMPLE_MODELS}
+    assert listed_examples == examples_with_models
 
 
 def each_model(known_failures=lambda model: ()):
