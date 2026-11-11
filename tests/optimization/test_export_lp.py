@@ -16,7 +16,8 @@ from rtctools._internal.casadi_to_lp import (
     _build_bounds,
     _build_constraints,
     _build_objective,
-    _lp_unique_names,
+    _lp_safe_name,
+    _lp_unique_safe_names,
     _sanitize_var_names,
     _write_lp_file,
 )
@@ -480,9 +481,34 @@ class TestLPBuilders(unittest.TestCase):
             names = _sanitize_var_names([{"a": [0]}, {"b": [0]}], 1)
         self.assertEqual(names, ["a__m0"])
 
-    def test_lp_unique_names(self):
+    def test_lp_safe_name(self):
+        changed = [
+            "inflow",
+            "Inf_x",
+            "nan_level",
+            "Bounds",
+            "st.",
+            "e",
+            "e5__t0",
+            "eels",
+            "1x",
+            ".x",
+        ]
+        unchanged = ["max_level", "max__t0", "e__t0", "ex5", "e_5", "sos1", "_inflow"]
+        for name in changed:
+            with self.subTest(name=name):
+                self.assertEqual(_lp_safe_name(name), "_" + name)
+        for name in unchanged:
+            with self.subTest(name=name):
+                self.assertEqual(_lp_safe_name(name), name)
+
+    def test_lp_unique_safe_names(self):
         self.assertEqual(
-            _lp_unique_names(["a", "a", "a", "a__d2"], set()), ["a", "a__d1", "a__d3", "a__d2"]
+            _lp_unique_safe_names(["a", "a", "a", "a__d2"], set()),
+            ["a", "a__d1", "a__d3", "a__d2"],
+        )
+        self.assertEqual(
+            _lp_unique_safe_names(["inflow", "_inflow"], set()), ["_inflow__d1", "_inflow"]
         )
 
     def test_sanitize_var_names_are_unique(self):
@@ -499,6 +525,12 @@ class TestLPBuilders(unittest.TestCase):
     def test_sanitize_var_names_avoids_zero_helper_variable(self):
         names = _sanitize_var_names([{"__zero": [0]}], 1)
         self.assertEqual(names, ["__zero__d1"])
+
+    def test_sanitize_var_names_renames_keywords_not_indexed_names(self):
+        names = _sanitize_var_names([{"max": [0], "x": [1, 2], "max_x": [3, 4]}], 5)
+        self.assertEqual(names, ["_max", "x__t0", "x__t1", "max_x__t0", "max_x__t1"])
+        names = _sanitize_var_names([{"max": [0, 1]}], 2)
+        self.assertEqual(names, ["max__t0", "max__t1"])
 
     def test_write_lp_file_no_overwrite(self):
         """_write_lp_file() must not overwrite an existing file; it appends a counter instead."""
@@ -929,6 +961,19 @@ class TestLPRoundTrip(unittest.TestCase):
             status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
         self.assertEqual(status, "Optimal")
         self.assertEqual(objective, -100.0)
+
+    def test_renamed_variable_names_are_read_by_highs(self):
+        names = _sanitize_var_names([{"max": [0], "inflow": [1], "nan_level": [2]}], 3)
+        X = ca.SX.sym("X", 3)
+        constraints = _build_constraints(X, X, [1.0] * 3, [np.inf] * 3, names)
+        bounds, _, _ = _build_bounds(names, [0.0] * 3, [10.0] * 3, [False] * 3)
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file(
+                "t.lp", "  " + " + ".join(names), constraints, bounds, [], [], output_folder
+            )
+            status, objective = _solve_lp_with_highs(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(status, "Optimal")
+        self.assertEqual(objective, 3.0)
 
     def test_control_tree(self):
         self.assert_round_trip(HiGHSControlTreeModel)
