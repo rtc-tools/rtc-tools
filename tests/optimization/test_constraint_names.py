@@ -1,3 +1,4 @@
+import casadi as ca
 import numpy as np
 
 from rtctools.optimization.goal_programming_mixin import Goal
@@ -127,6 +128,21 @@ class TestConstraintLabels(TestCase):
         problem = UnnamedModel()
         problem.optimize()
         self.assertIsNone(problem.transcribed_problem["g_names"])
+
+    def test_labels_are_available_to_the_solver(self):
+        class Model(NamedModel):
+            def solver_options(self):
+                options = super().solver_options()
+                options["casadi_solver"] = self.record_labels
+                return options
+
+            def record_labels(self, *args):
+                self.solver_labels = self.transcribed_problem["g_names"]
+                return ca.nlpsol(*args)
+
+        problem = Model()
+        problem.optimize()
+        self.assertIn("x_at_half", problem.solver_labels)
 
     def test_mismatched_labels_are_dropped(self):
         class Model(LabelledModel):
