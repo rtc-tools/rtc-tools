@@ -16,6 +16,7 @@ from rtctools._internal.casadi_to_lp import (
     _build_bounds,
     _build_constraints,
     _build_objective,
+    _lp_unique_names,
     _sanitize_var_names,
     _write_lp_file,
 )
@@ -478,6 +479,26 @@ class TestLPBuilders(unittest.TestCase):
         with self.assertLogs("rtctools", "WARNING"):
             names = _sanitize_var_names([{"a": [0]}, {"b": [0]}], 1)
         self.assertEqual(names, ["a__m0"])
+
+    def test_lp_unique_names(self):
+        self.assertEqual(
+            _lp_unique_names(["a", "a", "a", "a__d2"], set()), ["a", "a__d1", "a__d3", "a__d2"]
+        )
+
+    def test_sanitize_var_names_are_unique(self):
+        cases = [
+            ([{"u": [0, 1], "u__t0": [2]}], 3),
+            ([{"a[1]": [0], "a_I1I_": [1]}], 2),
+            ([{"u": [0, 1], "u__t0": [3]}, {"u": [0, 2], "u__t0": [3]}], 4),
+        ]
+        for indices, n in cases:
+            with self.subTest(indices=indices):
+                names = _sanitize_var_names(indices, n)
+                self.assertEqual(len(set(names)), n, msg=names)
+
+    def test_sanitize_var_names_avoids_zero_helper_variable(self):
+        names = _sanitize_var_names([{"__zero": [0]}], 1)
+        self.assertEqual(names, ["__zero__d1"])
 
     def test_write_lp_file_no_overwrite(self):
         """_write_lp_file() must not overwrite an existing file; it appends a counter instead."""

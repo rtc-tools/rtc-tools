@@ -80,6 +80,22 @@ def _deduplicate(names: list[str]) -> list[str]:
     return result
 
 
+def _lp_unique_names(names: list[str], reserved: set[str]) -> list[str]:
+    """Return ``names`` with later duplicates suffixed ``__d{n}``, none of them in ``reserved``."""
+    taken = set(names) | reserved
+    seen = set(reserved)
+    next_suffix = {}
+    result = []
+    for base in names:
+        name = base
+        while name in seen or (name != base and name in taken):
+            next_suffix[base] = next_suffix.get(base, 0) + 1
+            name = f"{base}__d{next_suffix[base]}"
+        seen.add(name)
+        result.append(name)
+    return result
+
+
 def _describe(indices, names: list[str | None] | None) -> str:
     """List up to ten indices, by name where names are given."""
     indices = list(indices)[:10]
@@ -350,7 +366,8 @@ def _sanitize_var_names(
     integrated states or scalar parameters receive no ``__t`` suffix.
 
     Square brackets in names are replaced with ``_I`` / ``I_`` because CPLEX does
-    not accept ``[`` or ``]`` in LP variable names.
+    not accept ``[`` or ``]`` in LP variable names. Names that end up equal get a
+    ``__d{n}`` suffix.
 
     Args:
         indices_per_member: Per-member mapping from variable name to its slot indices
@@ -394,7 +411,7 @@ def _sanitize_var_names(
     arr = np.array(var_names, dtype=str)
     arr = np.char.replace(arr, "[", "_I")
     arr = np.char.replace(arr, "]", "I_")
-    return arr.tolist()
+    return _lp_unique_names(arr.tolist(), {LP_ZERO_VAR})
 
 
 def _write_lp_file(
