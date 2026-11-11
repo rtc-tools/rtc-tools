@@ -1,5 +1,5 @@
 import numpy as np
-from casadi import SX, Function, if_else, inf, jacobian, logic_and, nlpsol, sum2, vertcat
+from casadi import SX, Function, hessian, if_else, inf, logic_and, nlpsol, sum2, vertcat
 
 from .bspline import BSpline
 
@@ -116,9 +116,7 @@ class BSpline1D(BSpline):
         expr = cls(t, c, k)(x_sym)
         free_vars = [c, x_sym]
         bspline = Function("bspline", free_vars, [expr])
-        J = jacobian(expr, x_sym)
-        # bspline_prime = Function('bspline_prime', free_vars, [J])
-        H = jacobian(J, x_sym)
+        H, _ = hessian(expr, x_sym)
         bspline_prime_prime = Function("bspline_prime_prime", free_vars, [H])
 
         # Objective Function
