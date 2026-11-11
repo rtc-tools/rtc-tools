@@ -108,6 +108,16 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
             )
             g_names = None
 
+        self.__transcribed_problem = {
+            "lbx": lbx,
+            "ubx": ubx,
+            "lbg": lbg,
+            "ubg": ubg,
+            "x0": x0,
+            "nlp": nlp,
+            "g_names": g_names,
+        }
+
         # Create an NLP solver
         logger.debug("Collecting solver options")
 
@@ -196,15 +206,6 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
         # Extract relevant stats
         self.__objective_value = float(results["f"])
         self.__solver_output = np.array(results["x"]).ravel()
-        self.__transcribed_problem = {
-            "lbx": lbx,
-            "ubx": ubx,
-            "lbg": lbg,
-            "ubg": ubg,
-            "x0": x0,
-            "nlp": nlp,
-            "g_names": g_names,
-        }
         self.__lam_g = results.get("lam_g")
         self.__lam_x = results.get("lam_x")
 
@@ -494,7 +495,7 @@ class OptimizationProblem(DataStoreAccessor, metaclass=ABCMeta):
     @property
     def transcribed_problem(self) -> dict[str, Any]:
         """
-        The transcribed problem.
+        The transcribed problem. :meth:`optimize` sets it before it creates the solver.
         """
         return self.__transcribed_problem
 
