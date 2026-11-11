@@ -16,17 +16,32 @@ except ImportError:
 import numpy as np
 
 
+def _encode_character_array(value: str, width: int, encoding: str = "utf-8") -> np.ndarray:
+    encoded_value = value.encode(encoding)
+    if len(encoded_value) > width:
+        raise ValueError(f"Value '{value}' does not fit in a character dimension of size {width}.")
+
+    characters = np.zeros(width, dtype="S1")
+    characters[: len(encoded_value)] = np.frombuffer(encoded_value, dtype="S1")
+    return characters
+
+
 class Stations:
     def __init__(self, dataset: Dataset, station_variable: Variable):
         self.__station_variable = station_variable
 
         station_dimension = station_variable.dimensions[0]
 
-        # todo make this a bit smarter, right now variables like station_name would be forgotten
         self.__attribute_variables = {}
         for variable_name in dataset.variables:
             variable = dataset.variables[variable_name]
-            if variable != station_variable and variable.dimensions == (station_dimension,):
+            is_scalar_attribute = variable.dimensions == (station_dimension,)
+            is_character_attribute = (
+                len(variable.dimensions) == 2
+                and variable.dimensions[0] == station_dimension
+                and getattr(variable.dtype, "kind", None) in ("S", "U")
+            )
+            if variable != station_variable and (is_scalar_attribute or is_character_attribute):
                 self.__attribute_variables[variable_name] = variable
 
         self.__attributes = OrderedDict()
@@ -34,8 +49,14 @@ class Stations:
             id = str(chartostring(station_variable[i]))
 
             values = {}
-            for variable_name in self.__attribute_variables.keys():
-                values[variable_name] = dataset.variables[variable_name][i]
+            for variable_name, variable in self.__attribute_variables.items():
+                value = variable[i]
+                if len(variable.dimensions) == 2 and not isinstance(value, str):
+                    if np.ndim(value) == 0 and getattr(value.dtype, "kind", None) in ("O", "U"):
+                        value = str(value.item())
+                    else:
+                        value = str(chartostring(value))
+                values[variable_name] = value
 
             self.__attributes[id] = values
 
@@ -52,7 +73,9 @@ class Stations:
     def attributes(self) -> OrderedDict:
         """
         :return: An OrderedDict containing dicts containing the values for all
-            station attributes of the input dataset.
+            station attributes of the input dataset. Attributes can be scalar
+            variables indexed by station or character arrays whose first dimension
+            is the station dimension.
         """
         return self.__attributes
 
@@ -363,8 +386,21 @@ class ExportDataset:
         self.__station_dim = self.__dataset.createDimension("station", len(output_station_ids))
 
         # first write the ids
-        max_id_length = max(len(id) for id in output_station_ids)
-        self.__dataset.createDimension("char_leng_id", max_id_length)
+        attribute_dimension_sizes = {}
+        for attr_var in stations.attribute_variables.values():
+            for dimension_index, dimension_name in enumerate(attr_var.dimensions[1:], start=1):
+                dimension_size = attr_var.shape[dimension_index]
+                previous_size = attribute_dimension_sizes.setdefault(dimension_name, dimension_size)
+                if previous_size != dimension_size:
+                    raise ValueError(
+                        f"Dimension '{dimension_name}' has inconsistent sizes in station metadata."
+                    )
+
+        max_id_length = max(len(id.encode("utf-8")) for id in output_station_ids)
+        station_id_width = max(
+            max_id_length, attribute_dimension_sizes.get("char_leng_id", max_id_length)
+        )
+        self.__dataset.createDimension("char_leng_id", station_id_width)
         station_id_var = self.__dataset.createVariable(
             "station_id", "c", ("station", "char_leng_id")
         )
@@ -375,19 +411,38 @@ class ExportDataset:
         # correct index later
         self.__station_id_to_index_mapping = {}
         for i, id in enumerate(output_station_ids):
-            station_id_var[i, :] = list(id)
+            station_id_var[i, :] = _encode_character_array(id, station_id_width)
             self.__station_id_to_index_mapping[id] = i
 
         # now write the stored attributes
         for var_name, attr_var in stations.attribute_variables.items():
-            variable = self.__dataset.createVariable(var_name, attr_var.datatype, ("station",))
+            dimensions = ["station"]
+            for dimension_index, dimension_name in enumerate(attr_var.dimensions[1:], start=1):
+                dimension_size = attr_var.shape[dimension_index]
+                if dimension_name not in self.__dataset.dimensions:
+                    self.__dataset.createDimension(dimension_name, dimension_size)
+                elif len(self.__dataset.dimensions[dimension_name]) < dimension_size:
+                    raise ValueError(
+                        f"Dimension '{dimension_name}' is too small in the output dataset."
+                    )
+                dimensions.append(dimension_name)
+
+            variable = self.__dataset.createVariable(var_name, attr_var.datatype, tuple(dimensions))
             # copy all attributes from the original input variable
             variable.setncatts(attr_var.__dict__)
+            if len(dimensions) == 2:
+                variable.set_auto_chartostring(False)
 
             for station_id in output_station_ids:
                 if station_id in stations.attributes:
                     station_index = self.__station_id_to_index_mapping[station_id]
-                    variable[station_index] = stations.attributes[station_id][var_name]
+                    value = stations.attributes[station_id][var_name]
+                    if len(dimensions) == 2:
+                        encoding = getattr(attr_var, "_Encoding", "utf-8")
+                        width = len(self.__dataset.dimensions[dimensions[1]])
+                        variable[station_index, :] = _encode_character_array(value, width, encoding)
+                    else:
+                        variable[station_index] = value
 
     def create_variables(self, variable_names: list[str], ensemble_size: int) -> None:
         """
