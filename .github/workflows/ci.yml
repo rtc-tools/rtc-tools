@@ -148,11 +148,9 @@ jobs:
     env:
       TOXENV: omc
       OMC_VERSION: ${{ matrix.omc_version }}
+      # The image has no git, so hatch-vcs cannot determine the version.
+      SETUPTOOLS_SCM_PRETEND_VERSION: "0+omc"
     steps:
-    # The image has no git. Without it, checkout downloads a tarball instead
-    # of cloning, and hatch-vcs cannot determine the version of rtc-tools.
-    - name: Install git
-      run: apt-get update -qq && apt-get install -y -qq git
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
     - uses: ./.github/actions/setup-python
       with:
