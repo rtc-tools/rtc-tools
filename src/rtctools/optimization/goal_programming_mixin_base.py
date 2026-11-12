@@ -997,11 +997,11 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                             ensemble_member=ensemble_member,
                             is_path_constraint=is_path_goal,
                         ):
+                            # A path target is the name of a constant input, any other its value
                             if is_path_constraint:
                                 target = problem.variable(target)
                                 eps = problem.variable(epsilon.name())
                             else:
-                                target = problem.parameters(ensemble_member)[target]
                                 eps = problem.extra_variable(epsilon.name(), ensemble_member)
 
                             inds = inds.nonzero()[0].astype(int).tolist()
@@ -1018,7 +1018,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         if goal.has_target_min and np.any(target_min_slice_inds):
                             _f = functools.partial(
                                 _soft_constraint_func,
-                                target=min_variable,
+                                target=min_variable if is_path_goal else target_min,
                                 bound=goal.function_range[0],
                                 inds=target_min_slice_inds,
                             )
@@ -1027,7 +1027,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         if goal.has_target_max and np.any(target_max_slice_inds):
                             _f = functools.partial(
                                 _soft_constraint_func,
-                                target=max_variable,
+                                target=max_variable if is_path_goal else target_max,
                                 bound=goal.function_range[1],
                                 inds=target_max_slice_inds,
                             )
