@@ -535,6 +535,8 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
 
     def _gp_n_objectives(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
+        if not self.goal_programming_options()["scale_by_problem_size"]:
+            return None  # Only scale_by_problem_size needs the count
         return (
             ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
             + ca.vertcat(*[o(self, ensemble_member) for o in subproblem_path_objectives]).size1()
