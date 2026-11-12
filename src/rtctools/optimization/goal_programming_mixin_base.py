@@ -1006,16 +1006,17 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                             else:
                                 eps = problem.extra_variable(epsilon.name(), ensemble_member)
 
-                            inds = inds.nonzero()[0].astype(int).tolist()
-
                             f = goal.function(problem, ensemble_member)
                             nominal = goal.function_nominal
 
-                            return ca.if_else(
-                                ca.fabs(target) < sys.float_info.max,
-                                (f - eps * (bound - target) - target) / nominal,
-                                0.0,
-                            )[inds]
+                            # CasADi folds if_else on True and full slices; skip their overhead
+                            has_target = ca.fabs(target) < sys.float_info.max
+                            expr = (f - eps * (bound - target) - target) / nominal
+                            if has_target is not True:
+                                expr = ca.if_else(has_target, expr, 0.0)
+                            if not inds.all():
+                                expr = expr[inds.nonzero()[0].astype(int).tolist()]
+                            return expr
 
                         if goal.has_target_min and np.any(target_min_slice_inds):
                             _f = functools.partial(
