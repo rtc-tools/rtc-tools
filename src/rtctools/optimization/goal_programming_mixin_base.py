@@ -459,6 +459,15 @@ def _goal_name(goal: Goal) -> str:
     return f"{type(goal).__name__}_p{goal.priority}"
 
 
+def _scaled_objective(goal: Goal, objective: ca.MX, n_active: int | np.ndarray) -> ca.MX:
+    """``goal.weight * objective / n_active``, skipping the factors CasADi would fold anyway."""
+    if goal.weight != 1.0:
+        objective = goal.weight * objective
+    if np.any(n_active != 1):
+        objective = objective / n_active
+    return objective
+
+
 class _GoalConstraint:
     def __init__(
         self,
@@ -957,7 +966,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         else:
                             epsilon = problem.extra_variable(epsilon.name(), ensemble_member)
 
-                        return goal.weight * ca.constpow(epsilon, goal.order) / n_active
+                        return _scaled_objective(goal, ca.constpow(epsilon, goal.order), n_active)
 
                 else:
                     if is_path_goal and options["scale_by_problem_size"]:
@@ -973,7 +982,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         n_active=n_active,
                     ):
                         f = goal.function(problem, ensemble_member) / goal.function_nominal
-                        return goal.weight * ca.constpow(f, goal.order) / n_active
+                        return _scaled_objective(goal, ca.constpow(f, goal.order), n_active)
 
                 objectives.append(_objective_func)
 
