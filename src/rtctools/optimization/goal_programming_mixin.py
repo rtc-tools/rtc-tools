@@ -161,17 +161,13 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
         return seed
 
     def objective(self, ensemble_member):
-        n_objectives = self._gp_n_objectives(
+        return self._gp_objective(
             self.__subproblem_objectives, self.__subproblem_path_objectives, ensemble_member
         )
-        return self._gp_objective(self.__subproblem_objectives, n_objectives, ensemble_member)
 
     def path_objective(self, ensemble_member):
-        n_objectives = self._gp_n_objectives(
-            self.__subproblem_objectives, self.__subproblem_path_objectives, ensemble_member
-        )
         return self._gp_path_objective(
-            self.__subproblem_path_objectives, n_objectives, ensemble_member
+            self.__subproblem_objectives, self.__subproblem_path_objectives, ensemble_member
         )
 
     def constraints(self, ensemble_member):
