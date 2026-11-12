@@ -568,6 +568,21 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         else:
             return ca.MX(0)
 
+    def _gp_ensemble_member_objective(
+        self, subproblem_objectives, subproblem_path_objectives, ensemble_member
+    ):
+        n_objectives = self._gp_n_objectives(
+            subproblem_objectives, subproblem_path_objectives, ensemble_member
+        )
+        expr = self._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
+        expr += ca.sum1(
+            self.map_path_expression(
+                self._gp_path_objective(subproblem_path_objectives, n_objectives, ensemble_member),
+                ensemble_member,
+            )
+        )
+        return expr
+
     @abstractmethod
     def goal_programming_options(self) -> dict[str, float | bool]:
         raise NotImplementedError()
