@@ -788,7 +788,13 @@ class TestExportDataset(TestCase):
         self.dataset.close()
 
     def test_roundtrip_import_export_integration(self):
+        def _close_if_open(importer):
+            dataset = importer._ImportDataset__dataset
+            if dataset.isopen():
+                dataset.close()
+
         import_dataset = netcdf.ImportDataset(data_path(), "timeseries_import_ensemble")
+        self.addCleanup(_close_if_open, import_dataset)
         stations = import_dataset.read_station_data()
         station_ids = list(stations.station_ids)
         ensemble_size = import_dataset.ensemble_size
@@ -809,6 +815,7 @@ class TestExportDataset(TestCase):
         self.dataset.close()
 
         reimported = netcdf.ImportDataset(data_path(), "timeseries_export")
+        self.addCleanup(_close_if_open, reimported)
         try:
             for station_index in range(len(station_ids)):
                 for ensemble_member in range(ensemble_size):
@@ -818,5 +825,5 @@ class TestExportDataset(TestCase):
                     actual = reimported.read_timeseries_values(station_index, "x", ensemble_member)
                     self.assertSequenceEqual(expected.tolist(), actual.tolist())
         finally:
-            reimported._ImportDataset__dataset.close()
-            import_dataset._ImportDataset__dataset.close()
+            _close_if_open(reimported)
+            _close_if_open(import_dataset)
