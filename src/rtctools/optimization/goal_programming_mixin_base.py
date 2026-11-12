@@ -534,35 +534,40 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         self._gp_current_priority = None  # Set to the active priority during optimize()
         self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
 
-    def _gp_n_objectives(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
-        return (
-            ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
-            + ca.vertcat(*[o(self, ensemble_member) for o in subproblem_path_objectives]).size1()
-        )
+    def _gp_n_objectives(self, subproblem_objectives, ensemble_member):
+        return ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
 
-    def _gp_objective(self, subproblem_objectives, n_objectives, ensemble_member):
+    def _gp_objective(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
         if len(subproblem_objectives) > 0:
-            acc_objective = ca.sum1(
-                ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives])
-            )
+            objectives = ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives])
+            acc_objective = ca.sum1(objectives)
 
             if self.goal_programming_options()["scale_by_problem_size"]:
-                acc_objective = acc_objective / n_objectives
+                acc_objective = acc_objective / (
+                    objectives.size1()
+                    + self._gp_n_objectives(subproblem_path_objectives, ensemble_member)
+                )
 
             return acc_objective
         else:
             return ca.MX(0)
 
-    def _gp_path_objective(self, subproblem_path_objectives, n_objectives, ensemble_member):
+    def _gp_path_objective(
+        self, subproblem_objectives, subproblem_path_objectives, ensemble_member
+    ):
         if len(subproblem_path_objectives) > 0:
-            acc_objective = ca.sum1(
-                ca.vertcat(*[o(self, ensemble_member) for o in subproblem_path_objectives])
+            path_objectives = ca.vertcat(
+                *[o(self, ensemble_member) for o in subproblem_path_objectives]
             )
+            acc_objective = ca.sum1(path_objectives)
 
             if self.goal_programming_options()["scale_by_problem_size"]:
                 # Objective is already divided by number of active time steps
                 # at this point when `scale_by_problem_size` is set.
-                acc_objective = acc_objective / n_objectives
+                acc_objective = acc_objective / (
+                    self._gp_n_objectives(subproblem_objectives, ensemble_member)
+                    + path_objectives.size1()
+                )
 
             return acc_objective
         else:
@@ -571,15 +576,14 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
     def _gp_ensemble_member_objective(
         self, subproblem_objectives, subproblem_path_objectives, ensemble_member
     ):
-        n_objectives = self._gp_n_objectives(
+        expr = self._gp_objective(
             subproblem_objectives, subproblem_path_objectives, ensemble_member
         )
-        expr = self._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
         if len(subproblem_path_objectives) > 0:
             expr += ca.sum1(
                 self.map_path_expression(
                     self._gp_path_objective(
-                        subproblem_path_objectives, n_objectives, ensemble_member
+                        subproblem_objectives, subproblem_path_objectives, ensemble_member
                     ),
                     ensemble_member,
                 )
