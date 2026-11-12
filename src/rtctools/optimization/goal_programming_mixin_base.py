@@ -575,12 +575,15 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
             subproblem_objectives, subproblem_path_objectives, ensemble_member
         )
         expr = self._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
-        expr += ca.sum1(
-            self.map_path_expression(
-                self._gp_path_objective(subproblem_path_objectives, n_objectives, ensemble_member),
-                ensemble_member,
+        if len(subproblem_path_objectives) > 0:
+            expr += ca.sum1(
+                self.map_path_expression(
+                    self._gp_path_objective(
+                        subproblem_path_objectives, n_objectives, ensemble_member
+                    ),
+                    ensemble_member,
+                )
             )
-        )
         return expr
 
     @abstractmethod
