@@ -473,17 +473,8 @@ class SinglePassGoalProgrammingMixin(_GoalProgrammingMixinBase):
         def _objective_func(subproblem_objectives, subproblem_path_objectives):
             val = 0.0
             for ensemble_member in range(self.ensemble_size):
-                n_objectives = self._gp_n_objectives(
+                expr = self._gp_ensemble_member_objective(
                     subproblem_objectives, subproblem_path_objectives, ensemble_member
-                )
-                expr = self._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
-                expr += ca.sum1(
-                    self.map_path_expression(
-                        self._gp_path_objective(
-                            subproblem_path_objectives, n_objectives, ensemble_member
-                        ),
-                        ensemble_member,
-                    )
                 )
                 val += self.ensemble_member_probability(ensemble_member) * expr
 
