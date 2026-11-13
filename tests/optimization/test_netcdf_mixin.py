@@ -141,9 +141,10 @@ class TestNetCDFMixin(TestCase):
         dataset = Dataset(filename)
 
         written_variables = dataset.variables.keys()
-        self.assertEqual(len(written_variables), 10)
+        self.assertEqual(len(written_variables), 11)
         self.assertIn("time", written_variables)
         self.assertIn("station_id", written_variables)
+        self.assertIn("station_names", written_variables)
         self.assertNotIn("realization", written_variables)
         self.assertIn("lon", written_variables)
         self.assertIn("lat", written_variables)
@@ -176,6 +177,11 @@ class TestNetCDFMixin(TestCase):
         self.assertEqual(loc_a_index, 1)
         self.assertEqual(loc_b_index, 2)
         self.assertEqual(loc_c_index, 0)
+
+        station_names = dataset.variables["station_names"]
+        self.assertEqual(station_names.shape, (3, 10))
+        self.assertEqual(str(chartostring(station_names[loc_a_index])), "Location A")
+        self.assertEqual(str(chartostring(station_names[loc_b_index])), "Location B")
 
         self.assertAlmostEqual(
             dataset.variables["lon"][loc_a_index], 4.3780269, delta=self.tolerance

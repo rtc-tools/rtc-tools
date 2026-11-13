@@ -3,9 +3,10 @@ import logging
 import os
 from copy import deepcopy
 from datetime import datetime, timedelta
+from tempfile import TemporaryDirectory
 
 import numpy as np
-from netCDF4 import Dataset
+from netCDF4 import Dataset, chartostring
 
 import rtctools.data.netcdf as netcdf
 
@@ -258,15 +259,16 @@ class TestImportDataset(TestCase):
         self.expected_location_id = {}
         self.expected_location_id[0] = create_expectation_list(files, ["loc_a"] * 3)
         self.expected_location_id[1] = create_expectation_list(files, ["loc_b"] * 3)
-        self.expected_station_attributes_lengths = create_expectation_list(files, [2] * 3)
+        self.expected_station_attributes_lengths = create_expectation_list(files, [3] * 3)
         self.expected_station_attributes = create_expectation_list(
             files,
             [
-                ["lon", "lat"],
+                ["lon", "lat", "station_names"],
             ]
             * 3,
         )
         self.expected_lat_loc_a = create_expectation_list(files, [51.9856484] * 3)
+        self.expected_name_loc_a = create_expectation_list(files, ["Location A"] * 3)
 
         frame = inspect.currentframe()
         func_name = inspect.getframeinfo(frame).function
@@ -351,6 +353,10 @@ class TestImportDataset(TestCase):
                 self.assertIn(_attribute, read_attributes)
 
         self.assertEqual(stations.attributes["loc_a"]["lat"], self.expected_lat_loc_a[file_key])
+        self.assertEqual(
+            stations.attributes["loc_a"]["station_names"],
+            self.expected_name_loc_a[file_key],
+        )
 
     def _subtest_read_timeseries_values(self, file_key):
         self.dataset = netcdf.ImportDataset(data_path(), filepaths[file_key])
@@ -454,7 +460,7 @@ class TestExportDataset(TestCase):
         self.dataset.close()
         self.dataset = get_exported_dataset()
 
-        for _dimension in ("station", "char_leng_id"):
+        for _dimension in ("station", "char_leng_id", "char_leng_name"):
             self.assertIn(
                 _dimension,
                 self.dataset.dimensions,
@@ -471,13 +477,17 @@ class TestExportDataset(TestCase):
         _attribute_values = ("station identification code", "timeseries_id")
         self.check_attributes(_variable, _attributes, _attribute_values)
 
-        for _variable in ("station_id", "lat", "lon"):
+        for _variable in ("station_id", "station_names", "lat", "lon"):
             self.assertIn(
                 _variable,
                 self.dataset.variables,
                 f"Variable '{_variable}' is missing, but should be available "
                 "to be able to identify the stations.",
             )
+        np.testing.assert_array_equal(
+            chartostring(self.dataset.variables["station_names"][:]),
+            ["Location A", "Location B"],
+        )
         for _attribute in ("long_name", "cf_role"):
             self.assertIn(
                 _attribute,
@@ -508,6 +518,60 @@ class TestExportDataset(TestCase):
         self.assertTrue(name_loc1 == b"loc_a")
         self.assertTrue(self.dataset.variables["lon"][0].data == 4.3780269)
         self.assertTrue(self.dataset.variables["lat"][0].data == 51.9856484)
+
+    def test_write_encoded_station_metadata(self):
+        def character_array(value, width):
+            encoded_value = value.encode("utf-8")
+            characters = np.zeros(width, dtype="S1")
+            characters[: len(encoded_value)] = np.frombuffer(encoded_value, dtype="S1")
+            return characters
+
+        with TemporaryDirectory() as directory:
+            input_path = os.path.join(directory, "input.nc")
+            with Dataset(input_path, mode="w") as dataset:
+                dataset.createDimension("time", 1)
+                dataset.createDimension("station", 2)
+                dataset.createDimension("char_leng_id", 10)
+                dataset.createDimension("language", 2)
+
+                time_variable = dataset.createVariable("time", "f8", ("time",))
+                time_variable.standard_name = "time"
+                time_variable.axis = "T"
+
+                station_variable = dataset.createVariable(
+                    "station_id", "S1", ("station", "char_leng_id")
+                )
+                station_variable.cf_role = "timeseries_id"
+                station_variable[:] = np.stack(
+                    (character_array("a", 10), character_array("bb", 10))
+                )
+
+                station_names = dataset.createVariable(
+                    "station_names", "S1", ("station", "char_leng_id")
+                )
+                station_names.setncattr("_Encoding", "utf-8")
+                station_names.set_auto_chartostring(False)
+                station_names[:] = np.stack((character_array("Alpha", 10), character_array("", 10)))
+
+                translations = dataset.createVariable("translations", str, ("station", "language"))
+                translations[:] = np.array((("Alpha", "Alfa"), ("", "")), dtype=object)
+
+            imported = netcdf.ImportDataset(directory, "input")
+            try:
+                stations = imported.read_station_data()
+                self.assertNotIn("translations", stations.attribute_variables)
+                self.assertEqual(stations.attributes["a"]["station_names"], "Alpha")
+                self.assertEqual(stations.attributes["bb"]["station_names"], "")
+
+                exported = netcdf.ExportDataset(directory, "output")
+                exported.write_station_data(stations, list(stations.station_ids))
+                exported.close()
+            finally:
+                imported._ImportDataset__dataset.close()
+
+            with Dataset(os.path.join(directory, "output.nc")) as dataset:
+                self.assertEqual(dataset.dimensions["char_leng_id"].size, 10)
+                np.testing.assert_array_equal(dataset.variables["station_names"][:], ["Alpha", ""])
 
     def test_write_ensemble_data_without_ensemble(self):
         ensemble_size = 1
