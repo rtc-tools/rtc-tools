@@ -475,8 +475,11 @@ class _GoalConstraint:
 
         # NumPy arrays only allowed for vector goals
         if isinstance(m, np.ndarray):
-            assert len(m) == goal.size
-            assert len(M) == goal.size
+            if len(m) != goal.size or len(M) != goal.size:
+                raise ValueError(
+                    f"Function range for goal {goal.__class__.__name__} must have "
+                    f"{goal.size} entries"
+                )
 
         self.goal = goal
         self.function = function
@@ -639,10 +642,19 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
             M = np.broadcast_to(M, (g.size, len(M)))
 
         if g.size > 1:
-            assert m.shape == (g.size, 1 if target_shape is None else target_shape)
+            expected_shape = (g.size, 1 if target_shape is None else target_shape)
         else:
-            assert m.shape == (1 if target_shape is None else target_shape,)
-        assert m.shape == M.shape
+            expected_shape = (1 if target_shape is None else target_shape,)
+        if m.shape != expected_shape:
+            raise ValueError(
+                f"Target minimum for goal {g.__class__.__name__} has shape {m.shape}; "
+                f"expected {expected_shape}"
+            )
+        if M.shape != expected_shape:
+            raise ValueError(
+                f"Target maximum for goal {g.__class__.__name__} has shape {M.shape}; "
+                f"expected {expected_shape}"
+            )
 
         return m, M
 
@@ -813,6 +825,16 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
             if goal.relaxation < 0.0:
                 raise Exception(f"Relaxation of goal {goal} should be a nonnegative value")
 
+    @staticmethod
+    def _gp_validate_goal_function_size(goal, function):
+        function_size = function.size1()
+        if function_size != goal.size:
+            raise ValueError(
+                f"Goal {goal.__class__.__name__} declares size {goal.size}, "
+                f"but its function returns {function_size} rows"
+            )
+        return function
+
     def _gp_goal_constraints(self, goals, sym_index, options, is_path_goal):
         """
         There are three ways in which a goal turns into objectives/constraints:
@@ -952,7 +974,12 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         is_path_goal=is_path_goal,
                         n_active=n_active,
                     ):
-                        f = goal.function(problem, ensemble_member) / goal.function_nominal
+                        f = (
+                            self._gp_validate_goal_function_size(
+                                goal, goal.function(problem, ensemble_member)
+                            )
+                            / goal.function_nominal
+                        )
                         return goal.weight * ca.constpow(f, goal.order) / n_active
 
                 objectives.append(_objective_func)
@@ -988,7 +1015,9 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
 
                             inds = inds.nonzero()[0].astype(int).tolist()
 
-                            f = goal.function(problem, ensemble_member)
+                            f = self._gp_validate_goal_function_size(
+                                goal, goal.function(problem, ensemble_member)
+                            )
                             nominal = goal.function_nominal
 
                             return ca.if_else(
@@ -1064,10 +1093,15 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
             if np.any(inds):
                 if is_path_goal:
                     expr = self.map_path_expression(
-                        goal.function(self, ensemble_member), ensemble_member
+                        self._gp_validate_goal_function_size(
+                            goal, goal.function(self, ensemble_member)
+                        ),
+                        ensemble_member,
                     )
                 else:
-                    expr = goal.function(self, ensemble_member)
+                    expr = self._gp_validate_goal_function_size(
+                        goal, goal.function(self, ensemble_member)
+                    )
 
                 function = ca.Function("f", [self.solver_input], [expr])
                 value = np.array(function(self.solver_output))
@@ -1100,7 +1134,8 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         constraint = _GoalConstraint(
             goal,
             lambda problem, ensemble_member=ensemble_member, goal=goal: (
-                goal.function(problem, ensemble_member) / goal.function_nominal
+                self._gp_validate_goal_function_size(goal, goal.function(problem, ensemble_member))
+                / goal.function_nominal
             ),
             m,
             M,
