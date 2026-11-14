@@ -459,6 +459,15 @@ def _goal_name(goal: Goal) -> str:
     return f"{type(goal).__name__}_p{goal.priority}"
 
 
+def _scaled_objective(goal: Goal, objective: ca.MX, n_active: int | np.ndarray) -> ca.MX:
+    """``goal.weight * objective / n_active``, skipping the factors CasADi would fold anyway."""
+    if goal.weight != 1.0:
+        objective = goal.weight * objective
+    if np.any(n_active != 1):
+        objective = objective / n_active
+    return objective
+
+
 class _GoalConstraint:
     def __init__(
         self,
@@ -535,6 +544,8 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
         self._gp_n_priorities = 0  # Set to the total number of priorities during optimize()
 
     def _gp_n_objectives(self, subproblem_objectives, subproblem_path_objectives, ensemble_member):
+        if not self.goal_programming_options()["scale_by_problem_size"]:
+            return None  # Only scale_by_problem_size needs the count
         return (
             ca.vertcat(*[o(self, ensemble_member) for o in subproblem_objectives]).size1()
             + ca.vertcat(*[o(self, ensemble_member) for o in subproblem_path_objectives]).size1()
@@ -567,6 +578,24 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
             return acc_objective
         else:
             return ca.MX(0)
+
+    def _gp_ensemble_member_objective(
+        self, subproblem_objectives, subproblem_path_objectives, ensemble_member
+    ):
+        n_objectives = self._gp_n_objectives(
+            subproblem_objectives, subproblem_path_objectives, ensemble_member
+        )
+        expr = self._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
+        if len(subproblem_path_objectives) > 0:
+            expr += ca.sum1(
+                self.map_path_expression(
+                    self._gp_path_objective(
+                        subproblem_path_objectives, n_objectives, ensemble_member
+                    ),
+                    ensemble_member,
+                )
+            )
+        return expr
 
     @abstractmethod
     def goal_programming_options(self) -> dict[str, float | bool]:
@@ -937,7 +966,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         else:
                             epsilon = problem.extra_variable(epsilon.name(), ensemble_member)
 
-                        return goal.weight * ca.constpow(epsilon, goal.order) / n_active
+                        return _scaled_objective(goal, ca.constpow(epsilon, goal.order), n_active)
 
                 else:
                     if is_path_goal and options["scale_by_problem_size"]:
@@ -953,7 +982,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         n_active=n_active,
                     ):
                         f = goal.function(problem, ensemble_member) / goal.function_nominal
-                        return goal.weight * ca.constpow(f, goal.order) / n_active
+                        return _scaled_objective(goal, ca.constpow(f, goal.order), n_active)
 
                 objectives.append(_objective_func)
 
@@ -979,28 +1008,29 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                             ensemble_member=ensemble_member,
                             is_path_constraint=is_path_goal,
                         ):
+                            # A path target is the name of a constant input, any other its value
                             if is_path_constraint:
                                 target = problem.variable(target)
                                 eps = problem.variable(epsilon.name())
                             else:
-                                target = problem.parameters(ensemble_member)[target]
                                 eps = problem.extra_variable(epsilon.name(), ensemble_member)
-
-                            inds = inds.nonzero()[0].astype(int).tolist()
 
                             f = goal.function(problem, ensemble_member)
                             nominal = goal.function_nominal
 
-                            return ca.if_else(
-                                ca.fabs(target) < sys.float_info.max,
-                                (f - eps * (bound - target) - target) / nominal,
-                                0.0,
-                            )[inds]
+                            # CasADi folds if_else on True and full slices; skip their overhead
+                            has_target = ca.fabs(target) < sys.float_info.max
+                            expr = (f - eps * (bound - target) - target) / nominal
+                            if has_target is not True:
+                                expr = ca.if_else(has_target, expr, 0.0)
+                            if not inds.all():
+                                expr = expr[inds.nonzero()[0].astype(int).tolist()]
+                            return expr
 
                         if goal.has_target_min and np.any(target_min_slice_inds):
                             _f = functools.partial(
                                 _soft_constraint_func,
-                                target=min_variable,
+                                target=min_variable if is_path_goal else target_min,
                                 bound=goal.function_range[0],
                                 inds=target_min_slice_inds,
                             )
@@ -1009,7 +1039,7 @@ class _GoalProgrammingMixinBase(OptimizationProblem, metaclass=ABCMeta):
                         if goal.has_target_max and np.any(target_max_slice_inds):
                             _f = functools.partial(
                                 _soft_constraint_func,
-                                target=max_variable,
+                                target=max_variable if is_path_goal else target_max,
                                 bound=goal.function_range[1],
                                 inds=target_max_slice_inds,
                             )

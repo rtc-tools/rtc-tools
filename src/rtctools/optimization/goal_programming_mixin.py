@@ -594,17 +594,8 @@ class GoalProgrammingMixin(_GoalProgrammingMixinBase):
             for ensemble_member in range(problem.ensemble_size):
                 # NOTE: Users might be overriding objective() and/or path_objective(). Use the
                 # private methods that work only on the goals.
-                n_objectives = problem._gp_n_objectives(
+                expr = problem._gp_ensemble_member_objective(
                     subproblem_objectives, subproblem_path_objectives, ensemble_member
-                )
-                expr = problem._gp_objective(subproblem_objectives, n_objectives, ensemble_member)
-                expr += ca.sum1(
-                    problem.map_path_expression(
-                        problem._gp_path_objective(
-                            subproblem_path_objectives, n_objectives, ensemble_member
-                        ),
-                        ensemble_member,
-                    )
                 )
                 val += problem.ensemble_member_probability(ensemble_member) * expr
 
