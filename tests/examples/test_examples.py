@@ -46,11 +46,13 @@ class TestExamples(TestCase):
         env = sys.executable
         for example_path in ec.errors_detected.keys():
             try:
-                subprocess.check_output([env, example_path])
+                output = subprocess.check_output([env, example_path], text=True)
             except Exception:
                 ec.errors_detected[example_path] = True
             else:
-                ec.errors_detected[example_path] = False
+                # IPOPT solves a problem with more equality constraints than free variables
+                # only through a fallback, after reporting this.
+                ec.errors_detected[example_path] = "Too few degrees of freedom" in output
 
     def test_examples(self):
         ec = ExamplesCollection()
