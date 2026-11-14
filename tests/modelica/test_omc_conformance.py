@@ -84,18 +84,10 @@ EXAMPLE_MODELS = [
     Model("channel_wave_damping/ExampleOptimization", fails_check=CHECK_DELTARES_MAX),
     Model("channel_wave_damping/ExampleLocalControl", fails_check=CHECK_DELTARES_MAX),
     Model("ensemble/Example"),
-    Model(
-        "goal_programming/Example",
-        fails_translate=TRANSLATE_UNDER_DETERMINED,
-        warns=WARNING_NO_EQUATION_LEFT,
-    ),
+    Model("goal_programming/Example"),
     Model("integrator_delay/Example"),
     Model("lookup_table/Example"),
-    Model(
-        "mixed_integer/Example",
-        fails_translate=TRANSLATE_UNDER_DETERMINED,
-        warns=WARNING_NO_EQUATION_LEFT,
-    ),
+    Model("mixed_integer/Example"),
     # Under-determined by design: Turbine_is_on is a decision variable, constrained in Python.
     Model(
         "pumped_hydropower_system/PumpedStoragePlant",

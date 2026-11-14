@@ -45,8 +45,8 @@ model Example
   Deltares.ChannelFlow.Hydraulic.Structures.DischargeControlledStructure dam_upstream annotation(Placement(visible = true, transformation(origin = {-30, 0}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
 
   // Inputs
-  input Modelica.Units.SI.Position Level_H(fixed = true) = Level.H;
-  input Modelica.Units.SI.VolumeFlowRate Inflow_Q(fixed = true) = Discharge.Q;
+  input Modelica.Units.SI.Position Level_H(fixed = true);
+  input Modelica.Units.SI.VolumeFlowRate Inflow_Q(fixed = true);
 
   // Outputs
   output Modelica.Units.SI.Position H_middle = middle.H[middle.n_level_nodes];
@@ -57,6 +57,8 @@ model Example
   parameter Modelica.Units.SI.Duration step_size(start = 0.0); // Value set in parameters()
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
 equation
+  Level_H = Level.H;
+  Inflow_Q = Discharge.Q;
   connect(dam_middle.HQDown, downstream.HQUp) annotation(Line(points = {{38, 0}, {50, 0}}, color = {0, 0, 255}));
   connect(dam_middle.HQUp, middle.HQDown) annotation(Line(points = {{8, 0}, {22, 0}, {22, 0}, {22, 0}}, color = {0, 0, 255}));
   connect(dam_upstream.HQDown, middle.HQUp) annotation(Line(points = {{-22, 0}, {-8, 0}}, color = {0, 0, 255}));

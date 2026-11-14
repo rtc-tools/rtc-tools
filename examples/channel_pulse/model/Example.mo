@@ -24,8 +24,8 @@ model Example
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Level Level annotation(Placement(visible = true, transformation(origin = {60, 8}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   Deltares.ChannelFlow.Hydraulic.BoundaryConditions.Discharge Discharge annotation(Placement(visible = true, transformation(origin = {-60, 8}, extent = {{-10, -10}, {10, 10}}, rotation = 0)));
   // Inputs
-  input Real Inflow_Q(fixed=true) = Discharge.Q;
-  input Real Level_H(fixed=true) = Level.H;
+  input Real Inflow_Q(fixed=true);
+  input Real Level_H(fixed=true);
   parameter Real theta(start = 1.0); // Value driven by HomotopyMixin
   parameter Real step_size(start = 0.0); // Value set in parameters()
   // Output Channel states
@@ -34,6 +34,8 @@ model Example
   output Real Channel_H_up = Discharge.HQ.H;
   output Real Channel_H_dn = Level.H;
 equation
+  Inflow_Q = Discharge.Q;
+  Level_H = Level.H;
   connect(Channel.HQDown, Level.HQ) annotation(Line(points = {{8, 0}, {60, 0}, {60, 0}, {60, 0}}, color = {0, 0, 255}));
   connect(Discharge.HQ, Channel.HQUp) annotation(Line(points = {{-60, 0}, {-8, 0}, {-8, 0}, {-8, 0}}, color = {0, 0, 255}));
 initial equation
