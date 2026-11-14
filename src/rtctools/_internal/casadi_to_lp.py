@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import textwrap
 from collections import Counter
 
@@ -22,6 +23,16 @@ LP_ZERO_VAR = "__zero"
 
 # Characters LP readers reject in names; a backslash would start a comment
 _LP_FORBIDDEN_NAME_CHARS = str.maketrans(dict.fromkeys(" \t\r\n\\:+-*/^<>=()[]'\"#", "_"))
+
+# Section keywords (case-insensitive) that HiGHS or CPLEX do not read as a name.
+_LP_KEYWORDS = frozenset(
+    "bin binaries binary bound bounds end free gen general generals integer integers max "
+    "maximize maximum min minimize minimum s.t. semi semis sos st st.".split()
+)
+
+# Names LP readers parse as numbers: a leading digit or period, inf or nan (HiGHS), or e/E
+# followed by a digit, e/E or nothing (CPLEX reads an exponent: "2 e - 3 z" is 2e-3 z).
+_LP_NUMBER_LIKE = re.compile(r"[0-9.]|inf|nan|e([0-9e]|$)", re.IGNORECASE)
 
 logger = logging.getLogger("rtctools")
 
@@ -77,6 +88,37 @@ def _deduplicate(names: list[str]) -> list[str]:
             taken.add(candidate)
             name = candidate
         result.append(name)
+    return result
+
+
+def _lp_safe_name(name: str) -> str:
+    """Return ``name``, prefixed with ``_`` if an LP reader would misread it."""
+    if name.lower() in _LP_KEYWORDS or _LP_NUMBER_LIKE.match(name):
+        return "_" + name
+    return name
+
+
+def _lp_unique_safe_names(names: list[str], reserved: set[str]) -> list[str]:
+    """
+    Return unique names that LP readers read as names, none of them in ``reserved``.
+
+    A name that ``_lp_safe_name`` leaves alone keeps its spelling over one it prefixes, so
+    ``inflow`` becomes ``_inflow__d1`` next to an existing ``_inflow``. Later duplicates get
+    a ``__d{n}`` suffix.
+    """
+    safe = [_lp_safe_name(n) for n in names]
+    order = sorted(range(len(names)), key=lambda i: safe[i] != names[i])
+    taken = set(safe) | reserved
+    seen = set(reserved)
+    next_suffix = {}
+    result = [""] * len(names)
+    for i in order:
+        base = name = safe[i]
+        while name in seen or (name != base and name in taken):
+            next_suffix[base] = next_suffix.get(base, 0) + 1
+            name = f"{base}__d{next_suffix[base]}"
+        seen.add(name)
+        result[i] = name
     return result
 
 
@@ -350,7 +392,8 @@ def _sanitize_var_names(
     integrated states or scalar parameters receive no ``__t`` suffix.
 
     Square brackets in names are replaced with ``_I`` / ``I_`` because CPLEX does
-    not accept ``[`` or ``]`` in LP variable names.
+    not accept ``[`` or ``]`` in LP variable names. Names an LP reader would misread get a
+    ``_`` prefix (see ``_lp_safe_name``); names that end up equal get a ``__d{n}`` suffix.
 
     Args:
         indices_per_member: Per-member mapping from variable name to its slot indices
@@ -394,7 +437,17 @@ def _sanitize_var_names(
     arr = np.array(var_names, dtype=str)
     arr = np.char.replace(arr, "[", "_I")
     arr = np.char.replace(arr, "]", "I_")
-    return arr.tolist()
+    names = arr.tolist()
+    result = _lp_unique_safe_names(names, {LP_ZERO_VAR})
+    renamed = [(a, b) for a, b in zip(names, result, strict=True) if a != b]
+    if renamed:
+        logger.info(
+            "Renamed %d LP variable names that an LP reader would misread or that were not "
+            "unique, e.g. %s",
+            len(renamed),
+            ", ".join(f"{a} -> {b}" for a, b in renamed[:5]),
+        )
+    return result
 
 
 def _write_lp_file(
