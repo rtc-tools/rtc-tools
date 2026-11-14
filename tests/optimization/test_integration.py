@@ -430,8 +430,7 @@ class TestEnsembleBoundsStates(TestCase):
         problem = SingleShootingEnsembleStatesBoundsModel()
         problem.optimize()
 
-        # TODO: Update this when we expose the indices as a public property
-        indices = problem._CollocatedIntegratedOptimizationProblem__indices_as_lists
+        indices = problem._collint_variable_indices_as_lists
 
         bounds = [
             problem.bounds(ensemble_member) for ensemble_member in range(problem.ensemble_size)
