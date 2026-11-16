@@ -251,18 +251,18 @@ should print out the following lines::
 
     After finishing goals of priority 1:
     Level goal satisfied at 19 of 21 time steps
-    Integral of Q_pump = 74.18
-    Sum of Changes in Q_pump: 7.83
+    Integral of Q_pump = 74.10
+    Sum of squares of changes in Q_pump: 10.14
 
     After finishing goals of priority 2:
     Level goal satisfied at 19 of 21 time steps
     Integral of Q_pump = 60.10
-    Sum of Changes in Q_pump: 11.70
+    Sum of squares of changes in Q_pump: 34.89
 
     After finishing goals of priority 3:
     Level goal satisfied at 19 of 21 time steps
     Integral of Q_pump = 60.10
-    Sum of Changes in Q_pump: 10.07
+    Sum of squares of changes in Q_pump: 21.24
 
 As the output indicates, while optimizing for the priority 1 goal, no attempt
 was made to minimize the integral of ``Q_pump``. The only objective was to

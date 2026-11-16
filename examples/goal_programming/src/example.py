@@ -51,7 +51,8 @@ class MinimizeChangeInQpumpGoal(Goal):
     def function(self, optimization_problem, ensemble_member):
         return optimization_problem.der("Q_pump")
 
-    function_nominal = 5.0
+    # Reasonable scale is 5m^3/s/hour
+    function_nominal = 5.0 / 3600.0  # Units of m^3/s^2
     priority = 3
     # Default order is 2, but we want to be explicit
     order = 2
