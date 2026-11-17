@@ -1,17 +1,14 @@
-import importlib.resources
 import itertools
 import logging
-from importlib import metadata as importlib_metadata
 
 import casadi as ca
 import numpy as np
-import pymoca
-import pymoca.backends.casadi.api
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.caching import cached
 from rtctools._internal.casadi_helpers import substitute_in_external
 from rtctools._internal.ensemble_bounds_decorator import ensemble_bounds_check
+from rtctools._internal.modelica_mixin_base import _ModelicaMixinBase
 
 from .optimization_problem import OptimizationProblem
 from .timeseries import Timeseries
@@ -19,7 +16,7 @@ from .timeseries import Timeseries
 logger = logging.getLogger("rtctools")
 
 
-class ModelicaMixin(OptimizationProblem):
+class ModelicaMixin(_ModelicaMixinBase, OptimizationProblem):
     """
     Adds a `Modelica <http://www.modelica.org/>`_ model to your optimization problem.
 
@@ -33,59 +30,22 @@ class ModelicaMixin(OptimizationProblem):
     # Folders in which the referenced Modelica libraries are found
     modelica_library_folders = []
 
-    def __init__(self, **kwargs):
-        # Check arguments
-        assert "model_folder" in kwargs
+    def _mo_extra_variable_groups(self):
+        return {
+            "string_parameters": [
+                v.name
+                for v in (
+                    *self._mo_pymoca_model.string_parameters,
+                    *self._mo_pymoca_model.string_constants,
+                )
+            ],
+            "control_inputs": [],
+        }
 
-        # Log pymoca version
-        logger.debug(f"Using pymoca {pymoca.__version__}.")
+    def _mo_input_group(self, variable):
+        return "constant_inputs" if variable.fixed else "control_inputs"
 
-        # Transfer model from the Modelica .mo file to CasADi using pymoca
-        if "model_name" in kwargs:
-            model_name = kwargs["model_name"]
-        else:
-            if hasattr(self, "model_name"):
-                model_name = self.model_name
-            else:
-                model_name = self.__class__.__name__
-
-        self._mo_pymoca_model = self.pymoca_model(
-            kwargs["model_folder"], model_name, self.compiler_options()
-        )
-
-        # Extract the CasADi MX variables used in the model
-        self._mo_mx = {}
-        self._mo_mx["time"] = [self._mo_pymoca_model.time]
-        self._mo_mx["states"] = [v.symbol for v in self._mo_pymoca_model.states]
-        self._mo_mx["derivatives"] = [v.symbol for v in self._mo_pymoca_model.der_states]
-        self._mo_mx["algebraics"] = [v.symbol for v in self._mo_pymoca_model.alg_states]
-        self._mo_mx["parameters"] = [v.symbol for v in self._mo_pymoca_model.parameters]
-        self._mo_mx["string_parameters"] = [
-            v.name
-            for v in (
-                *self._mo_pymoca_model.string_parameters,
-                *self._mo_pymoca_model.string_constants,
-            )
-        ]
-        self._mo_mx["control_inputs"] = []
-        self._mo_mx["constant_inputs"] = []
-        self._mo_mx["lookup_tables"] = []
-
-        # Merge with user-specified delayed feedback
-        for v in self._mo_pymoca_model.inputs:
-            if v.symbol.name() in self._mo_pymoca_model.delay_states:
-                # Delayed feedback variables are local to each ensemble, and
-                # therefore belong to the collection of algebraic variables,
-                # rather than to the control inputs.
-                self._mo_mx["algebraics"].append(v.symbol)
-            else:
-                if v.symbol.name() in kwargs.get("lookup_tables", []):
-                    self._mo_mx["lookup_tables"].append(v.symbol)
-                elif v.fixed:
-                    self._mo_mx["constant_inputs"].append(v.symbol)
-                else:
-                    self._mo_mx["control_inputs"].append(v.symbol)
-
+    def _mo_init_from_model(self, **kwargs):
         # Initialize nominals and types
         # These are not in @cached dictionary properties for backwards compatibility.
         self.__python_types = AliasDict(self.alias_relation)
@@ -96,147 +56,17 @@ class ModelicaMixin(OptimizationProblem):
         ):
             self.__python_types[v.symbol.name()] = v.python_type
 
-        # Initialize dae, initial residuals, as well as delay arguments
-        # These are not in @cached dictionary properties so that we need to create the list
-        # of function arguments only once.
-        variable_lists = ["states", "der_states", "alg_states", "inputs", "constants", "parameters"]
-        function_arguments = [self._mo_pymoca_model.time] + [
-            ca.veccat(*[v.symbol for v in getattr(self._mo_pymoca_model, variable_list)])
-            for variable_list in variable_lists
-        ]
-
-        self._mo_dae_residual = self._mo_pymoca_model.dae_residual_function(*function_arguments)
-        if self._mo_dae_residual is None:
-            self._mo_dae_residual = ca.MX()
-
-        self._mo_initial_residual = self._mo_pymoca_model.initial_residual_function(
-            *function_arguments
-        )
-        if self._mo_initial_residual is None:
-            self._mo_initial_residual = ca.MX()
-
+    def _mo_init_after_residuals(self, **kwargs):
         # Log variables in debug mode
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(
-                "ModelicaMixin: Found states {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["states"]])
-                )
-            )
-            logger.debug(
-                "ModelicaMixin: Found derivatives {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["derivatives"]])
-                )
-            )
-            logger.debug(
-                "ModelicaMixin: Found algebraics {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["algebraics"]])
-                )
-            )
-            logger.debug(
-                "ModelicaMixin: Found control inputs {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["control_inputs"]])
-                )
-            )
-            logger.debug(
-                "ModelicaMixin: Found constant inputs {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["constant_inputs"]])
-                )
-            )
-            logger.debug(
-                "ModelicaMixin: Found parameters {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["parameters"]])
-                )
-            )
-
-        # Call parent class first for default behaviour.
-        super().__init__(**kwargs)
-
-    def pymoca_model(
-        self, model_folder: str, model_name: str, compiler_options: dict[str, str | bool]
-    ) -> pymoca.backends.casadi.model.Model:
-        """
-        Load or compile the model named ``model_name`` from the Modelica files in
-        ``model_folder``.
-
-        Override this method to supply a model from elsewhere, e.g. one composed in memory.
-        The model is requested once, from ``__init__``.
-
-        :param model_folder: Folder containing the Modelica files.
-        :param model_name: Name of the model class to compile.
-        :param compiler_options: The options returned by :py:meth:`compiler_options`.
-
-        :returns: A pymoca CasADi model.
-        """
-        logger.info(f"Loading/compiling model {model_name}.")
-        try:
-            return pymoca.backends.casadi.api.transfer_model(
-                model_folder, model_name, compiler_options
-            )
-        except (RuntimeError, ModuleNotFoundError) as error:
-            if not compiler_options.get("cache", False):
-                raise error
-            compiler_options["cache"] = False
-            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
-            logger.info(f"Compiling model {model_name}.")
-            return pymoca.backends.casadi.api.transfer_model(
-                model_folder, model_name, compiler_options
-            )
+        self._mo_log_dae_variables("ModelicaMixin")
 
     @cached
     def compiler_options(self) -> dict[str, str | bool]:
-        """
-        Subclasses can configure the `pymoca <http://github.com/pymoca/pymoca>`_ compiler options
-        here.
-
-        :returns:
-            A dictionary of pymoca compiler options.  See the pymoca documentation for details.
-        """
-
-        # Default options
-        compiler_options = {}
-
-        # Expand vector states to multiple scalar component states.
-        compiler_options["expand_vectors"] = True
-
-        # Where imported model libraries are located.
-        library_folders = self.modelica_library_folders.copy()
-
-        for ep in importlib_metadata.entry_points(group="rtctools.libraries.modelica"):
-            if ep.name == "library_folder":
-                library_folders.append(str(importlib.resources.files(ep.module).joinpath(ep.attr)))
-
-        compiler_options["library_folders"] = library_folders
-
-        # Eliminate equations of the type 'var = const'.
-        compiler_options["eliminate_constant_assignments"] = True
-
-        # Eliminate constant symbols from model, replacing them with the values
-        # specified in the model.
-        compiler_options["replace_constant_values"] = True
-
-        # Replace any constant expressions into the model.
-        compiler_options["replace_constant_expressions"] = True
-
-        # Replace any parameter expressions into the model.
-        compiler_options["replace_parameter_expressions"] = True
-
-        # Eliminate variables starting with underscores.
-        compiler_options["eliminable_variable_expression"] = r"(.*[.]|^)_\w+(\[[\d,]+\])?\Z"
-
-        # Pymoca currently requires `expand_mx` to be set for
-        # `eliminable_variable_expression` to work.
-        compiler_options["expand_mx"] = True
-
-        # Automatically detect and eliminate alias variables.
-        compiler_options["detect_aliases"] = True
+        compiler_options = super().compiler_options()
 
         # Disallow aliasing to derivative states
         compiler_options["allow_derivative_aliases"] = False
 
-        # Cache the model on disk
-        compiler_options["cache"] = True
-
-        # Done
         return compiler_options
 
     def delayed_feedback(self):
@@ -434,11 +264,6 @@ class ModelicaMixin(OptimizationProblem):
 
     def variable_is_discrete(self, variable):
         return self.__python_types.get(variable, float) is not float
-
-    @property
-    @cached
-    def alias_relation(self):
-        return self._mo_pymoca_model.alias_relation
 
     @property
     @cached

@@ -1,19 +1,16 @@
 import copy
-import importlib.resources
 import itertools
 import logging
 import math
 from collections import OrderedDict
-from importlib import metadata as importlib_metadata
 
 import casadi as ca
 import numpy as np
-import pymoca
-import pymoca.backends.casadi.api
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools._internal.caching import cached
 from rtctools._internal.debug_check_helpers import DebugLevel
+from rtctools._internal.modelica_mixin_base import _ModelicaMixinBase
 from rtctools.data.storage import DataStoreAccessor
 
 logger = logging.getLogger("rtctools")
@@ -44,7 +41,7 @@ class Variable:
         return self._symbol
 
 
-class SimulationProblem(DataStoreAccessor):
+class SimulationProblem(_ModelicaMixinBase, DataStoreAccessor):
     """
     Implements the `BMI <http://csdms.colorado.edu/wiki/BMI_Description>`_ Interface.
 
@@ -65,50 +62,8 @@ class SimulationProblem(DataStoreAccessor):
     # will be removed when proper delay support is added.
     _force_zero_delay = False
 
-    def __init__(self, **kwargs):
-        # Check arguments
-        assert "model_folder" in kwargs
-
-        # Log pymoca version
-        logger.debug(f"Using pymoca {pymoca.__version__}.")
-
-        # Transfer model from the Modelica .mo file to CasADi using pymoca
-        if "model_name" in kwargs:
-            model_name = kwargs["model_name"]
-        else:
-            if hasattr(self, "model_name"):
-                model_name = self.model_name
-            else:
-                model_name = self.__class__.__name__
-
-        # Load model from pymoca backend
-        self._mo_pymoca_model = self.pymoca_model(
-            kwargs["model_folder"], model_name, self.compiler_options()
-        )
-
-        # Extract the CasADi MX variables used in the model
-        self._mo_mx = {}
-        self._mo_mx["time"] = [self._mo_pymoca_model.time]
-        self._mo_mx["states"] = [v.symbol for v in self._mo_pymoca_model.states]
-        self._mo_mx["derivatives"] = [v.symbol for v in self._mo_pymoca_model.der_states]
-        self._mo_mx["algebraics"] = [v.symbol for v in self._mo_pymoca_model.alg_states]
-        self._mo_mx["parameters"] = [v.symbol for v in self._mo_pymoca_model.parameters]
-        self._mo_mx["constant_inputs"] = []
-        self._mo_mx["lookup_tables"] = []
-
-        for v in self._mo_pymoca_model.inputs:
-            if v.symbol.name() in self._mo_pymoca_model.delay_states:
-                # Delayed feedback variables are local to each ensemble, and
-                # therefore belong to the collection of algebraic variables,
-                # rather than to the control inputs.
-                self._mo_mx["algebraics"].append(v.symbol)
-            else:
-                if v.symbol.name() in kwargs.get("lookup_tables", []):
-                    self._mo_mx["lookup_tables"].append(v.symbol)
-                else:
-                    # All inputs are constant inputs
-                    self._mo_mx["constant_inputs"].append(v.symbol)
-
+    def _mo_init_from_model(self, **kwargs):
+        # The model is loaded; all its inputs are constant inputs.
         # Set timestep size
         self._dt_is_fixed = False
         self.__dt = None
@@ -128,32 +83,7 @@ class SimulationProblem(DataStoreAccessor):
             self._mo_mx["algebraics"] += delay_expression_states
 
         # Log variables in debug mode
-        if logger.getEffectiveLevel() == logging.DEBUG:
-            logger.debug(
-                "SimulationProblem: Found states {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["states"]])
-                )
-            )
-            logger.debug(
-                "SimulationProblem: Found derivatives {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["derivatives"]])
-                )
-            )
-            logger.debug(
-                "SimulationProblem: Found algebraics {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["algebraics"]])
-                )
-            )
-            logger.debug(
-                "SimulationProblem: Found constant inputs {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["constant_inputs"]])
-                )
-            )
-            logger.debug(
-                "SimulationProblem: Found parameters {}".format(
-                    ", ".join([var.name() for var in self._mo_mx["parameters"]])
-                )
-            )
+        self._mo_log_dae_variables("SimulationProblem")
 
         # Get the extra variables that are user defined
         self.__extra_variables = self.extra_variables()
@@ -200,26 +130,7 @@ class SimulationProblem(DataStoreAccessor):
         for v in self.__extra_variables:
             self.__nominals[v.name] = v.nominal
 
-        # Initialize DAE and initial residuals
-        variable_lists = ["states", "der_states", "alg_states", "inputs", "constants", "parameters"]
-        function_arguments = [self._mo_pymoca_model.time] + [
-            ca.veccat(*[v.symbol for v in getattr(self._mo_pymoca_model, variable_list)])
-            for variable_list in variable_lists
-        ]
-
-        self._mo_dae_residual = self._mo_pymoca_model.dae_residual_function(*function_arguments)
-
-        if self._mo_dae_residual is None:
-            # DAE is empty, that can happen if we add the only (non-aliasing) equations
-            # in Python.
-            self._mo_dae_residual = ca.MX()
-
-        self._mo_initial_residual = self._mo_pymoca_model.initial_residual_function(
-            *function_arguments
-        )
-        if self._mo_initial_residual is None:
-            self._mo_initial_residual = ca.MX()
-
+    def _mo_init_after_residuals(self, **kwargs):
         # Construct state vector
         self.__sym_list = (
             self._mo_mx["states"]
@@ -267,9 +178,6 @@ class SimulationProblem(DataStoreAccessor):
                     self.__i_start[alias] = (i_start[i], 1.0)
                     self.__i_end[alias] = (i_end[i], 1.0)
         self.__indices = self.__i_start
-
-        # Call parent class for default behaviour.
-        super().__init__(**kwargs)
 
     def _get_delay_times(self):
         """
@@ -1223,93 +1131,3 @@ class SimulationProblem(DataStoreAccessor):
 
     def extra_equations(self) -> list[ca.MX]:
         return []
-
-    @property
-    @cached
-    def alias_relation(self):
-        return self._mo_pymoca_model.alias_relation
-
-    def pymoca_model(
-        self, model_folder: str, model_name: str, compiler_options: dict[str, str | bool]
-    ) -> pymoca.backends.casadi.model.Model:
-        """
-        Load or compile the model named ``model_name`` from the Modelica files in
-        ``model_folder``.
-
-        Override this method to supply a model from elsewhere, e.g. one composed in memory.
-        The model is requested once, from ``__init__``.
-
-        :param model_folder: Folder containing the Modelica files.
-        :param model_name: Name of the model class to compile.
-        :param compiler_options: The options returned by :py:meth:`compiler_options`.
-
-        :returns: A pymoca CasADi model.
-        """
-        logger.info(f"Loading/compiling model {model_name}.")
-        try:
-            return pymoca.backends.casadi.api.transfer_model(
-                model_folder, model_name, compiler_options
-            )
-        except (RuntimeError, ModuleNotFoundError) as error:
-            if not compiler_options.get("cache", False):
-                raise error
-            compiler_options["cache"] = False
-            logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
-            logger.info(f"Compiling model {model_name}.")
-            return pymoca.backends.casadi.api.transfer_model(
-                model_folder, model_name, compiler_options
-            )
-
-    @cached
-    def compiler_options(self):
-        """
-        Subclasses can configure the `pymoca <http://github.com/pymoca/pymoca>`_ compiler options
-        here.
-
-        :returns:
-            A dictionary of pymoca compiler options.  See the pymoca documentation for details.
-        """
-
-        # Default options
-        compiler_options = {}
-
-        # Expand vector states to multiple scalar component states.
-        compiler_options["expand_vectors"] = True
-
-        # Where imported model libraries are located.
-        library_folders = self.modelica_library_folders.copy()
-
-        for ep in importlib_metadata.entry_points(group="rtctools.libraries.modelica"):
-            if ep.name == "library_folder":
-                library_folders.append(str(importlib.resources.files(ep.module).joinpath(ep.attr)))
-
-        compiler_options["library_folders"] = library_folders
-
-        # Eliminate equations of the type 'var = const'.
-        compiler_options["eliminate_constant_assignments"] = True
-
-        # Eliminate constant symbols from model, replacing them with the values
-        # specified in the model.
-        compiler_options["replace_constant_values"] = True
-
-        # Replace any constant expressions into the model.
-        compiler_options["replace_constant_expressions"] = True
-
-        # Replace any parameter expressions into the model.
-        compiler_options["replace_parameter_expressions"] = True
-
-        # Eliminate variables starting with underscores.
-        compiler_options["eliminable_variable_expression"] = r"(.*[.]|^)_\w+(\[[\d,]+\])?\Z"
-
-        # Pymoca currently requires `expand_mx` to be set for
-        # `eliminable_variable_expression` to work.
-        compiler_options["expand_mx"] = True
-
-        # Automatically detect and eliminate alias variables.
-        compiler_options["detect_aliases"] = True
-
-        # Cache the model on disk
-        compiler_options["cache"] = True
-
-        # Done
-        return compiler_options
