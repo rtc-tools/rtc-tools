@@ -1,8 +1,10 @@
 import os
 import re
+from unittest import mock
 
 import casadi as ca
 import numpy as np
+import pymoca.backends.casadi.api
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools.simulation.csv_mixin import CSVMixin
@@ -172,6 +174,37 @@ class SimulationModelBase(SimulationProblem):
             model_name="Model_base",
             model_folder=data_path(),
         )
+
+
+class SimulationModelCache(SimulationModelBase):
+    def compiler_options(self):
+        compiler_options = super().compiler_options()
+        compiler_options["cache"] = True
+        return compiler_options
+
+
+class TestSimulationCacheRetry(TestCase):
+    def check_compiles_without_cache_after(self, error):
+        transfer_model = pymoca.backends.casadi.api.transfer_model
+        calls = []
+
+        def failing_cache(model_folder, model_name, compiler_options):
+            calls.append(compiler_options["cache"])
+            if compiler_options["cache"]:
+                raise error
+            return transfer_model(model_folder, model_name, compiler_options)
+
+        with mock.patch.object(pymoca.backends.casadi.api, "transfer_model", failing_cache):
+            problem = SimulationModelCache()
+
+        self.assertEqual(calls, [True, False])
+        self.assertIn("y", problem.get_state_variables())
+
+    def test_runtime_error(self):
+        self.check_compiles_without_cache_after(RuntimeError("incompatible cache file"))
+
+    def test_module_not_found_error(self):
+        self.check_compiles_without_cache_after(ModuleNotFoundError("no module in cache file"))
 
 
 class SimulationModelNominal(SimulationProblem):
