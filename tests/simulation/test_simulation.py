@@ -5,6 +5,8 @@ from unittest import mock
 import casadi as ca
 import numpy as np
 import pymoca.backends.casadi.api
+from pymoca import parser
+from pymoca.backends.casadi import generator
 
 from rtctools._internal.alias_tools import AliasDict
 from rtctools.simulation.csv_mixin import CSVMixin
@@ -205,6 +207,40 @@ class TestSimulationCacheRetry(TestCase):
 
     def test_module_not_found_error(self):
         self.check_compiles_without_cache_after(ModuleNotFoundError("no module in cache file"))
+
+
+class SimulationModelInMemory(SimulationProblem):
+    """Model_base under a name that no file in the model folder defines."""
+
+    _force_zero_delay = True
+
+    def __init__(self):
+        super().__init__(
+            input_folder=data_path(),
+            output_folder=data_path(),
+            model_name="InMemory",
+            model_folder=data_path(),
+        )
+
+    def pymoca_model(self, model_folder, model_name, compiler_options):
+        with open(os.path.join(model_folder, "Model_base.mo")) as f:
+            source = f.read().replace("Model_base", model_name)
+        model = generator.generate(parser.parse(source), model_name, compiler_options)
+        model.simplify(compiler_options)
+        return model
+
+    def compiler_options(self):
+        compiler_options = super().compiler_options()
+        compiler_options["cache"] = False
+        compiler_options["library_folders"] = []
+        return compiler_options
+
+
+class TestSimulationInMemory(TestCase):
+    def test_pymoca_model_override(self):
+        problem = SimulationModelInMemory()
+        self.assertEqual(set(problem.get_state_variables()), {"y"})
+        self.assertEqual(set(problem.get_input_variables()), {"x"})
 
 
 class SimulationModelNominal(SimulationProblem):
