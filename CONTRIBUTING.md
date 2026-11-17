@@ -7,6 +7,7 @@
 - [Guidelines for Creating Issues](#guidelines-for-creating-issues)
   - [Security Reporting](#security-reporting)
 - [Guidelines for Creating Pull Requests](#guidelines-for-creating-pull-requests)
+- [AI Tools and Unresponsive Contributions](#ai-tools-and-unresponsive-contributions)
 - [Commits and Commit Messages](#commits-and-commit-messages)
 - [Code Quality Guidelines](#code-quality-guidelines)
 - [Setting up a Development Environment](#setting-up-a-development-environment)
@@ -89,6 +90,26 @@ If you discover a security vulnerability, please report it responsibly by emaili
 Contributors should rebase their branches on the latest main branch before submitting pull requests. As described in our [Governance](GOVERNANCE.md#linear-history) document, we maintain a linear Git history instead of using merge commits. To keep the history clean, use `git commit --amend` or `git rebase -i` to amend commits for small changes (typos, linting, formatting) rather than creating separate fixup commits.
 
 Keep pull requests small and focused for easier review and faster merging. A focused PR addresses a single concern (e.g., one bug fix, one feature, or one refactoring). While there's no strict limit on lines of code or number of commits, both the overall changeset and individual commits should be reviewable. Each commit should follow the [Commits and Commit Messages](#commits-and-commit-messages) guidelines.
+
+## AI Tools and Unresponsive Contributions
+
+We welcome contributions from people who use RTC-Tools or work on related projects, such as CasADi and Pymoca.
+When you open an issue or pull request, describe the problem you ran into and how you use RTC-Tools.
+
+You may use AI tools, provided that:
+
+- you disclose which tools you used and what for;
+- you understand every change and can explain it in review;
+- you have run the tests yourself;
+- you write your own replies in issues and reviews. Established contributors may also post replies written by an AI tool, provided each one says so at the top.
+
+We do not accept pull requests that an AI agent opened on its own.
+
+Maintainers may close issues and pull requests that do not follow these guidelines without review.
+If a maintainer has asked the author for changes or information and gets no reply within two weeks, the issue or pull request may be closed without further explanation.
+Maintainers may later implement the same change independently, without crediting the closed pull request.
+
+We do not label issues as `good first issue`: the best first contribution fixes a problem you ran into yourself.
 
 ## Commits and Commit Messages
 
