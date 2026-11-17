@@ -598,6 +598,17 @@ class TestVectorConstraints(TestCase):
         with self.assertRaises(NotImplementedError):
             self.problem.optimize()
 
+    def test_additional_path_variables_states_in_integral_notimplemented(self):
+        problem = ModelAdditionalPathVariablesVector()
+        problem.optimize()
+
+        v = problem._additional_path_var.name()
+        for name in (v, "-" + v):
+            with self.assertRaises(NotImplementedError):
+                problem.states_in(name)
+            with self.assertRaises(NotImplementedError):
+                problem.integral(name)
+
     @unittest.skip("state_at() not implemented yet for vector variables")
     def test_additional_path_variables_state_at(self):
         self.problem1 = ModelAdditionalPathVariables()
