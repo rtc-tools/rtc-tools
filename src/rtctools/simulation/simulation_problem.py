@@ -88,8 +88,8 @@ class SimulationProblem(DataStoreAccessor):
             self.__pymoca_model = pymoca.backends.casadi.api.transfer_model(
                 kwargs["model_folder"], model_name, compiler_options
             )
-        except RuntimeError as error:
-            if compiler_options.get("cache", False):
+        except (RuntimeError, ModuleNotFoundError) as error:
+            if not compiler_options.get("cache", False):
                 raise error
             compiler_options["cache"] = False
             logger.warning(f"Loading model {model_name} using a cache file failed: {error}.")
