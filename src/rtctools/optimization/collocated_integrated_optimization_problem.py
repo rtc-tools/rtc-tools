@@ -2840,6 +2840,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
         # Find canonical variable
         canonical, sign = self.alias_relation.canonical_signed(variable)
+        if self.__variable_sizes.get(canonical, 1) > 1:
+            raise NotImplementedError("states_in() and integral() not supported for vector states")
         state = self.variable_nominal(canonical) * self.state_vector(canonical, ensemble_member)
         if self.integrate_states and canonical in self.__integrators[ensemble_member]:
             state = ca.vertcat(state, ca.transpose(self.__integrators[ensemble_member][canonical]))
