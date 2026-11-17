@@ -2619,9 +2619,6 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         if isinstance(variable, ca.MX):
             variable = variable.name()
 
-        if self.__variable_sizes.get(variable, 1) > 1:
-            raise NotImplementedError("state_at() not supported for vector states")
-
         name = "{}[{},{}]{}".format(
             variable, ensemble_member, t - self.initial_time, "S" if scaled else ""
         )
@@ -2636,6 +2633,8 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
 
             # Fetch appropriate symbol, or value.
             canonical, sign = self.alias_relation.canonical_signed(variable)
+            if self.__variable_sizes.get(canonical, 1) > 1:
+                raise NotImplementedError("state_at() not supported for vector states")
             found = False
 
             # Check if it is in the state vector
