@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 try:
-    from netCDF4 import Dataset, Variable, chartostring
+    from netCDF4 import Dataset, Variable, chartostring, stringtochar
 except ImportError:
     raise ImportError("NetCDF4 is required when using NetCDF/NetCDFMixin")
 
@@ -375,7 +375,7 @@ class ExportDataset:
         # correct index later
         self.__station_id_to_index_mapping = {}
         for i, id in enumerate(output_station_ids):
-            station_id_var[i, :] = list(id)
+            station_id_var[i, :] = stringtochar(np.array(id, dtype=f"S{max_id_length}"))
             self.__station_id_to_index_mapping[id] = i
 
         # now write the stored attributes
