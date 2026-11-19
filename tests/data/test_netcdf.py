@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 
 import numpy as np
-from netCDF4 import Dataset
+from netCDF4 import Dataset, chartostring
 
 import rtctools.data.netcdf as netcdf
 
@@ -508,6 +508,19 @@ class TestExportDataset(TestCase):
         self.assertTrue(name_loc1 == b"loc_a")
         self.assertTrue(self.dataset.variables["lon"][0].data == 4.3780269)
         self.assertTrue(self.dataset.variables["lat"][0].data == 51.9856484)
+
+    def test_write_station_ids_of_different_lengths(self):
+        self.import_dataset = netcdf.ImportDataset(data_path(), "timeseries_import_ensemble")
+        stations = self.import_dataset.read_station_data()
+
+        self.dataset = netcdf.ExportDataset(data_path(), "timeseries_export")
+        self.dataset.write_station_data(stations, ["loc_a", "x"])
+        self.dataset.close()
+        self.dataset = get_exported_dataset()
+
+        np.testing.assert_array_equal(
+            chartostring(self.dataset.variables["station_id"][:]), ["loc_a", "x"]
+        )
 
     def test_write_ensemble_data_without_ensemble(self):
         ensemble_size = 1
