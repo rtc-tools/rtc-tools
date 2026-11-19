@@ -22,11 +22,16 @@ class Stations:
 
         station_dimension = station_variable.dimensions[0]
 
-        # todo make this a bit smarter, right now variables like station_name would be forgotten
         self.__attribute_variables = {}
         for variable_name in dataset.variables:
             variable = dataset.variables[variable_name]
-            if variable != station_variable and variable.dimensions == (station_dimension,):
+            is_scalar_attribute = variable.dimensions == (station_dimension,)
+            is_character_attribute = (
+                variable.ndim == 2
+                and variable.dimensions[0] == station_dimension
+                and variable.dtype == "S1"
+            )
+            if variable != station_variable and (is_scalar_attribute or is_character_attribute):
                 self.__attribute_variables[variable_name] = variable
 
         self.__attributes = OrderedDict()
@@ -34,8 +39,12 @@ class Stations:
             id = str(chartostring(station_variable[i]))
 
             values = {}
-            for variable_name in self.__attribute_variables.keys():
-                values[variable_name] = dataset.variables[variable_name][i]
+            for variable_name, variable in self.__attribute_variables.items():
+                value = variable[i]
+                if variable.ndim == 2:
+                    # With _Encoding set, netCDF4 already returns a string
+                    value = str(value) if np.ndim(value) == 0 else str(chartostring(value))
+                values[variable_name] = value
 
             self.__attributes[id] = values
 
@@ -52,7 +61,9 @@ class Stations:
     def attributes(self) -> OrderedDict:
         """
         :return: An OrderedDict containing dicts containing the values for all
-            station attributes of the input dataset.
+            station attributes of the input dataset. Attributes can be scalar
+            variables indexed by station or character arrays whose first dimension
+            is the station dimension.
         """
         return self.__attributes
 
@@ -362,9 +373,19 @@ class ExportDataset:
 
         self.__station_dim = self.__dataset.createDimension("station", len(output_station_ids))
 
-        # first write the ids
-        max_id_length = max(len(id) for id in output_station_ids)
+        character_dimensions = {
+            name: size
+            for attr_var in stations.attribute_variables.values()
+            for name, size in zip(attr_var.dimensions[1:], attr_var.shape[1:], strict=True)
+        }
+
+        # first write the ids, in a char_leng_id that a character attribute may share
+        max_id_length = max(
+            [len(id) for id in output_station_ids] + [character_dimensions.pop("char_leng_id", 0)]
+        )
         self.__dataset.createDimension("char_leng_id", max_id_length)
+        for name, size in character_dimensions.items():
+            self.__dataset.createDimension(name, size)
         station_id_var = self.__dataset.createVariable(
             "station_id", "c", ("station", "char_leng_id")
         )
@@ -380,14 +401,26 @@ class ExportDataset:
 
         # now write the stored attributes
         for var_name, attr_var in stations.attribute_variables.items():
-            variable = self.__dataset.createVariable(var_name, attr_var.datatype, ("station",))
-            # copy all attributes from the original input variable
-            variable.setncatts(attr_var.__dict__)
+            attributes = attr_var.__dict__.copy()
+            variable = self.__dataset.createVariable(
+                var_name,
+                attr_var.datatype,
+                ("station", *attr_var.dimensions[1:]),
+                fill_value=attributes.pop("_FillValue", None),
+            )
+            # copy all other attributes from the original input variable
+            variable.setncatts(attributes)
+            if variable.ndim == 2:
+                dtype = f"S{variable.shape[1]}"
+                encoding = getattr(attr_var, "_Encoding", "utf-8")
 
             for station_id in output_station_ids:
                 if station_id in stations.attributes:
                     station_index = self.__station_id_to_index_mapping[station_id]
-                    variable[station_index] = stations.attributes[station_id][var_name]
+                    value = stations.attributes[station_id][var_name]
+                    if variable.ndim == 2:
+                        value = stringtochar(np.array(value.encode(encoding), dtype=dtype))
+                    variable[station_index] = value
 
     def create_variables(self, variable_names: list[str], ensemble_size: int) -> None:
         """
