@@ -85,6 +85,7 @@ class ImportDataset:
         # Find the number of ensemble members and the time and station id variables
         self.__time_variable = self.__find_time_variable()
         if self.__time_variable is None:
+            self.__dataset.close()
             raise Exception(
                 "No time variable found in file " + self.__filename + ". "
                 "Please ensure the file contains a time variable with standard_name "
@@ -97,6 +98,7 @@ class ImportDataset:
 
         self.__station_variable = self.__find_station_variable()
         if self.__station_variable is None:
+            self.__dataset.close()
             raise Exception(
                 "No station variable found in file " + self.__filename + ". "
                 'Please ensure the file contains a variable with cf_role "timeseries_id".'
@@ -464,4 +466,5 @@ class ExportDataset:
         Closes the NetCDF4 Dataset to ensure all changes made are written to the file.
         This method must be called after writing all data through the various write method.
         """
-        self.__dataset.close()
+        if self.__dataset.isopen():
+            self.__dataset.close()
