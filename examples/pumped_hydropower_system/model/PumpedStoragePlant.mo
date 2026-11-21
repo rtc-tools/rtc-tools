@@ -33,7 +33,7 @@ model PumpedStoragePlant
   output Real PumpCost;
 
   // Define Boolean to ensure pumped storage turbine and pump cannot be used simultaneously
-  Boolean Turbine_is_on;
+  input Boolean Turbine_is_on(fixed = false);
 
   // Define constants for simple power calculations
   parameter Real efficiency_reservoir = 0.88;
