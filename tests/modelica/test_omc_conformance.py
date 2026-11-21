@@ -106,12 +106,7 @@ EXAMPLE_MODELS = [
     Model("integrator_delay/Example"),
     Model("lookup_table/Example"),
     Model("mixed_integer/Example"),
-    # Under-determined by design: Turbine_is_on is a decision variable, constrained in Python.
-    Model(
-        "pumped_hydropower_system/PumpedStoragePlant",
-        fails_translate=TRANSLATE_UNDER_DETERMINED,
-        warns=WARNING_NO_EQUATION_LEFT,
-    ),
+    Model("pumped_hydropower_system/PumpedStoragePlant"),
     Model("simulation/Example"),
     # Under-determined by design: the equation for y is implemented in Python.
     Model(
