@@ -57,10 +57,11 @@ By default the constraint rows are unnamed. Set the class attribute
 * ``objective_priority_{p}``: objective of an earlier priority, added by
   :class:`~rtctools.optimization.single_pass_goal_programming_mixin.SinglePassGoalProgrammingMixin`
 
-Elements of a vector constraint get ``__{k}``, and ensemble members ``__m{i}``. A row with a
-finite lower and upper bound becomes two lines, labelled ``__lb`` and ``__ub``. Characters
-that LP readers reject become ``_``, and repeated labels get ``__d{n}``. The labels are also
-available without exporting, in ``transcribed_problem["g_names"]`` after :meth:`optimize`.
+Elements of a vector constraint get ``__{k}``, and ensemble members ``__m{i}``. A row with two
+different finite bounds becomes two lines, labelled ``__lb`` and ``__ub``. In the LP file, row
+names get the same prefixes and suffixes as variable names (see below).
+The labels are also available without exporting, in ``transcribed_problem["g_names"]`` after
+:meth:`optimize`. These names can repeat and contain characters that the LP file replaces.
 
 To name a constraint yourself, set ``named_constraints = True`` and add the name as 4th
 element of the tuple. With this flag on, constraint lists may mix 3- and 4-tuples, so code
@@ -84,12 +85,19 @@ LP readers give a variable without an explicit lower bound the lower bound 0. A 
 only an upper bound is therefore written as ``-Inf <= x <= ub``, so that a negative upper bound
 does not make the problem infeasible. Keep the ``-Inf`` if you edit the file by hand.
 
-Variable names that an LP reader would misread get a ``_`` prefix in the file: section keywords
-such as ``max``, names starting with ``inf``, ``nan``, a digit or a period, and names starting
-with ``e`` or ``E`` followed by a digit, another ``e`` or ``E``, or nothing (``e``, ``e5``,
-``eels``). Names that end up equal get a ``__d{n}`` suffix.
+Variable and row names that an LP reader would misread get a ``_`` prefix in the file:
+section keywords such as ``max``, names starting with ``inf``, ``nan``, a digit or a period,
+and names starting with ``e`` or ``E`` followed by a digit, another ``e`` or ``E``, or nothing
+(``e``, ``e5``, ``eels``). In row names, characters that LP readers reject become ``_``.
+
+Names that end up equal get a suffix, separately among the variables and among the rows: the
+first keeps its spelling, and later ones get ``__d1``, ``__d2``, and so on. A name that got no
+prefix wins over one that did. A model with scalar variables ``inflow`` and ``_inflow`` is
+written with ``_inflow`` as ``_inflow`` and ``inflow`` as ``_inflow__d1``.
 
 Rows with two infinite bounds are left out of the file. A row that reduces to a constant
 outside its bounds (by more than 1e-9, or with a lower bound above its upper bound) is kept,
 written against a variable ``__zero`` fixed to 0, so that an LP solver also finds the exported
-problem infeasible.
+problem infeasible. With ``named_constraints`` or ``label_all_constraint_rows`` set, the row
+fixing ``__zero`` is itself labelled ``__zero``. A variable or row of your own with that name
+is renamed to ``__zero__d1``.
