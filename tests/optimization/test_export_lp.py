@@ -335,12 +335,45 @@ class TestLPBuilders(unittest.TestCase):
     def test_build_constraints_range(self):
         """A constraint with both bounds finite and lb < ub must emit two lines (>= and <=)."""
         _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: X[0])
-        result = _build_constraints(g, X, [1.0], [3.0], names)
-        self.assertIn(">=", result)
-        self.assertIn("<=", result)
-        # Both lines must appear with correct RHS (b_i=0 here, so RHS = bound - 0)
-        self.assertRegex(result, r">=\s*1")
-        self.assertRegex(result, r"<=\s*3")
+        for row_names, expected in [
+            (["r"], ["r__lb: 1 x0 >= 1", "r__ub: 1 x0 <= 3"]),
+            (None, ["1 x0 >= 1", "1 x0 <= 3"]),
+        ]:
+            with self.subTest(row_names=row_names):
+                result = _build_constraints(g, X, [1.0], [3.0], names, row_names)
+                self.assertEqual([ln.strip() for ln in result.splitlines()], expected)
+
+    def test_build_constraints_row_names_follow_variable_name_rules(self):
+        X = ca.SX.sym("X", 1)
+        g = ca.vertcat(*[X[0]] * 10)
+        names = ["q-in", "q_in", "q:in", "end", "inflow", "nan_level", "e5", "max", "1x", "_1x"]
+        result = _build_constraints(g, X, [0.0] * 10, [np.inf] * 10, ["x0"], names)
+        expected = ["q_in", "q_in__d1", "q_in__d2", "_end", "_inflow", "_nan_level", "_e5", "_max"]
+        self.assertEqual(re.findall(r"(?m)^  (\S+): ", result), [*expected, "_1x__d1", "_1x"])
+
+    def test_build_constraints_unnamed_rows_are_not_suffixed(self):
+        X = ca.SX.sym("X", 1)
+        g = ca.vertcat(*[X[0]] * 4)
+        result = _build_constraints(g, X, [0.0] * 4, [np.inf] * 4, ["x0"], [None, "a", "", None])
+        self.assertEqual(
+            [ln.strip() for ln in result.splitlines()],
+            ["1 x0 >= 0", "a: 1 x0 >= 0", "1 x0 >= 0", "1 x0 >= 0"],
+        )
+
+    def test_build_constraints_user_row_named_zero_is_renamed(self):
+        X = ca.SX.sym("X", 1)
+        g = ca.vertcat(X[0], ca.SX(1.0))
+        with self.assertLogs("rtctools", "WARNING"):
+            result = _build_constraints(g, X, [0.0, 0.0], [np.inf, 0.0], ["x0"], ["__zero", "c"])
+        self.assertEqual(
+            [ln.strip() for ln in result.splitlines()],
+            ["__zero__d1: 1 x0 >= 0", "c: __zero = -1", "__zero: __zero = 0"],
+        )
+
+    def test_build_constraints_user_row_named_zero_is_renamed_without_helper_row(self):
+        X = ca.SX.sym("X", 1)
+        result = _build_constraints(X[0], X, [0.0], [np.inf], ["x0"], ["__zero"])
+        self.assertEqual(result.strip(), "__zero__d1: 1 x0 >= 0")
 
     def test_build_constraints_vacuous_row_is_left_out(self):
         _, g, X, names = self._make_fg(1, lambda X: X[0], lambda X: ca.vertcat(X[0], 2 * X[0]))
@@ -1034,8 +1067,20 @@ class TestLPRoundTrip(unittest.TestCase):
             h.readModel(os.path.join(output_folder, "t.lp"))
         self.assertEqual(
             list(h.getLp().row_names_),
-            ["eq", "range__lb__d0", "range__ub", "_a_b__c", "_.1st", "range__lb__d1"],
+            ["eq", "range__lb", "range__ub", "_a_b__c", "_.1st", "range__lb__d1"],
         )
+
+    def test_row_names_starting_with_inf_or_nan_are_read_back(self):
+        X = ca.SX.sym("X", 1)
+        constraints = _build_constraints(
+            ca.vertcat(X[0], X[0]), X, [1.0, 2.0], [np.inf, np.inf], ["x0"], ["inflow", "nan_level"]
+        )
+        with tempfile.TemporaryDirectory() as output_folder:
+            _write_lp_file("t.lp", "  x0", constraints, "  0 <= x0 <= 10", [], [], output_folder)
+            h = highspy.Highs()
+            h.setOptionValue("output_flag", False)
+            h.readModel(os.path.join(output_folder, "t.lp"))
+        self.assertEqual(list(h.getLp().row_names_), ["_inflow", "_nan_level"])
 
 
 class TestGoalConstraintNames(unittest.TestCase):

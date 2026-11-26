@@ -2,7 +2,6 @@ import logging
 import os
 import re
 import textwrap
-from collections import Counter
 
 import casadi as ca
 import numpy as np
@@ -70,25 +69,8 @@ def _format_lp_bound(val: float) -> str:
 
 
 def _sanitize_lp_name(name: str) -> str:
-    """Replace characters LP readers reject, and prefix a leading digit or period."""
-    name = name.translate(_LP_FORBIDDEN_NAME_CHARS)
-    return f"_{name}" if name[:1].isdigit() or name[:1] == "." else name
-
-
-def _deduplicate(names: list[str]) -> list[str]:
-    """Append ``__d{n}`` to every occurrence of a repeated name; empty names stay empty."""
-    counts = Counter(names)
-    taken = set(names)
-    next_index = Counter()
-    result = []
-    for name in names:
-        if name and counts[name] > 1:
-            while (candidate := f"{name}__d{next_index[name]}") in taken:
-                next_index[name] += 1
-            taken.add(candidate)
-            name = candidate
-        result.append(name)
-    return result
+    """Replace characters LP readers reject."""
+    return name.translate(_LP_FORBIDDEN_NAME_CHARS)
 
 
 def _lp_safe_name(name: str) -> str:
@@ -214,9 +196,10 @@ def _build_constraints(
 
     Rows with both bounds infinite are left out. A row without variable terms is left out if
     its constant satisfies its bounds, and otherwise written against ``LP_ZERO_VAR`` (fixed to 0
-    by an extra row) so the file stays infeasible. With ``row_names``, each line is labelled
-    with its LP-safe row name: ``__lb`` / ``__ub`` for the two lines of a range row and
-    ``__d{n}`` for repeated names.
+    by an extra row) so the file stays infeasible. With ``row_names``, each line of a named row is
+    labelled with its row name (``__lb`` / ``__ub`` for the two lines of a range row), made
+    LP-safe and unique by ``_lp_unique_safe_names``; ``LP_ZERO_VAR`` is reserved for the extra
+    row. Unnamed rows stay unnamed.
 
     Note: constraint lines are not wrapped and may exceed the LP format 255-character
     line limit for problems with many variables. Use shorter variable names if needed.
@@ -295,7 +278,6 @@ def _build_constraints(
         else:
             lines.append((label, f"{c_str} <= {ub - b_i:.15g}"))
     if infeasible_constant_rows:
-        lines.append((LP_ZERO_VAR if row_names is not None else "", f"{LP_ZERO_VAR} = 0"))
         logger.warning(
             "LP export: %d constraint row(s) reduce to a constant that violates their bounds, "
             "so the problem is infeasible: %s.",
@@ -308,10 +290,15 @@ def _build_constraints(
             len(vacuous_rows),
             _describe(vacuous_rows, row_names),
         )
+    named = [i for i, (label, _) in enumerate(lines) if label]
+    unique = _lp_unique_safe_names([lines[i][0] for i in named], {LP_ZERO_VAR})
+    for i, label in zip(named, unique, strict=True):
+        lines[i] = (label, lines[i][1])
+    if infeasible_constant_rows:
+        # Labelled outside the uniqueness pass, which reserves LP_ZERO_VAR for this row.
+        lines.append((LP_ZERO_VAR if row_names is not None else "", f"{LP_ZERO_VAR} = 0"))
     if not lines:
         return ""
-    unique = _deduplicate([label for label, _ in lines])
-    lines = [(label, line) for label, (_, line) in zip(unique, lines, strict=True)]
     return "  " + "\n  ".join(f"{label}: {line}" if label else line for label, line in lines)
 
 
