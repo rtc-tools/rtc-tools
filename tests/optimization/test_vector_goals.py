@@ -110,6 +110,36 @@ class Goal4(Goal):
     priority = 2
 
 
+class MismatchedGoal(Goal):
+    function_range = (-5.0, 5.0)
+    target_min = 0.5
+    priority = 1
+
+    def __init__(self, size, function_size, is_path_goal):
+        self.size = size
+        self.function_size = function_size
+        self.is_path_goal = is_path_goal
+
+    def function(self, optimization_problem, ensemble_member):
+        if self.is_path_goal:
+            value = optimization_problem.state("x")
+        else:
+            value = optimization_problem.state_at("x", 0.5, ensemble_member=ensemble_member)
+        return ca.vertcat(*([value] * self.function_size))
+
+
+class ModelMismatchedGoal(Model):
+    def __init__(self, goal):
+        self._goal = goal
+        super().__init__()
+
+    def goals(self):
+        return [] if self._goal.is_path_goal else [self._goal]
+
+    def path_goals(self):
+        return [self._goal] if self._goal.is_path_goal else []
+
+
 class ModelGoals(Model):
     def goals(self):
         return [Goal1(), Goal2(), Goal3(), Goal4()]
@@ -273,6 +303,20 @@ class TestVectorGoals(TestCase):
 
         self.assertListEqual(self.problem1._objective_values, self.problem2._objective_values)
         self.assertTrue(np.array_equal(results1["x"], results2["x"]))
+
+    def test_goal_size_matches_function_size(self):
+        for is_path_goal in (False, True):
+            for size, function_size in ((2, 3), (3, 1), (1, 2)):
+                with self.subTest(
+                    is_path_goal=is_path_goal, size=size, function_size=function_size
+                ):
+                    problem = ModelMismatchedGoal(MismatchedGoal(size, function_size, is_path_goal))
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        rf"Goal MismatchedGoal declares size {size}, "
+                        rf"but its function returns {function_size} rows",
+                    ):
+                        problem.optimize()
 
 
 class ScaleByProblemSizeMixin:
