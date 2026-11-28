@@ -243,6 +243,9 @@ class CollocatedIntegratedOptimizationProblem(OptimizationProblem, metaclass=ABC
         return {"mode": "openmp"}
 
     def transcribe(self):
+        if self.ensemble_size < 1:
+            raise ValueError(f"ensemble_size must be >= 1, got {self.ensemble_size}.")
+
         # DAE residual
         dae_residual = self.dae_residual
 
