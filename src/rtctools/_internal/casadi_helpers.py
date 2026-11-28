@@ -1,6 +1,7 @@
 import logging
 
 import casadi as ca
+import numpy as np
 
 logger = logging.getLogger("rtctools")
 
@@ -71,12 +72,17 @@ def substitute_in_external(
 
 
 def interpolate(ts, xs, t, equidistant, mode=0):
-    if mode == 0:
-        mode_str = "linear"
-    elif mode == 1:
-        mode_str = "floor"
-    else:
-        mode_str = "ceil"
+    if mode != 0:
+        # Piecewise constant: mode 1 is floor, mode 2 is ceil
+        if (ts[1:] <= ts[:-1]).any():
+            raise ValueError("Time stamps must be strictly increasing.")
+        if isinstance(xs, np.ndarray):
+            xs = ca.DM(xs)
+        if mode == 1:
+            knots = np.maximum(np.searchsorted(ts, t, "right") - 1, 0)
+        else:
+            knots = np.minimum(np.searchsorted(ts, t, "left"), len(ts) - 1)
+        return xs[knots.tolist(), :]
 
     # CasADi fails if there is just a single point. Just "extrapolate" based on
     # that point, just as CasADi would do for entries in 't' outside the range
@@ -85,4 +91,4 @@ def interpolate(ts, xs, t, equidistant, mode=0):
         assert xs.size1() == 1
         return ca.vertcat(*[xs] * len(t))
 
-    return ca.interp1d(ts, xs, t, mode_str, equidistant)
+    return ca.interp1d(ts, xs, t, "linear", equidistant)
